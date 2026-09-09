@@ -1,0 +1,54 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'com.lodeen'
+version = '0.1.0'
+
+repositories {
+    mavenCentral()
+}
+
+ext {
+    lwjglVersion = '3.3.3'
+    jomlVersion = '1.10.5'
+}
+
+dependencies {
+    // LWJGL Core
+    implementation platform("org.lwjgl:lwjgl-bom:$lwjglVersion")
+
+    implementation "org.lwjgl:lwjgl"
+    implementation "org.lwjgl:lwjgl-glfw"
+    implementation "org.lwjgl:lwjgl-opengl"
+    
+    // JOML (математика)
+    implementation "org.joml:joml:$jomlVersion"
+
+    // Нативные библиотеки для текущей ОС
+    def os = System.getProperty('os.name').toLowerCase()
+    def natives = ''
+    if (os.contains('win')) {
+        natives = 'natives-windows'
+    } else if (os.contains('mac')) {
+        natives = 'natives-macos'
+    } else if (os.contains('nux') || os.contains('nix')) {
+        natives = 'natives-linux'
+    } else {
+        throw new GradleException("Unsupported OS: $os")
+    }
+
+    runtimeOnly "org.lwjgl:lwjgl::$natives"
+    runtimeOnly "org.lwjgl:lwjgl-glfw::$natives"
+    runtimeOnly "org.lwjgl:lwjgl-opengl::$natives"
+}
+
+application {
+    mainClass = 'Main'   // если Main в пакете, укажи 'com.lodeen.Main'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
