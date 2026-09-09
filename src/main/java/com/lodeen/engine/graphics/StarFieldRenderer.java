@@ -18,12 +18,51 @@ public class StarFieldRenderer {
             "    return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453);\n" +
             "}\n" +
             "void main(){\n" +
-            "    // Сохраняем пропорции: используем resolution.y как базовую единицу\n" +
             "    vec2 uv = gl_FragCoord.xy / resolution.y;\n" +
-            "    float gridSize = 400.0;\n" +          // больше ячеек -> больше звёзд
-            "    vec2 grid = floor(uv * gridSize);\n" +
-            "    float star = step(0.999, hash(grid));\n" +
-            "    FragColor = vec4(vec3(star), 1.0);\n" +
+            "    float density = 8000.0;\n" +
+            "    vec2 cell = floor(uv * density);\n" +
+            "    vec2 local = fract(uv * density) - 0.5;\n" +
+            "    vec4 rand = vec4(\n" +
+            "        hash(cell),\n" +
+            "        hash(cell + 1.0),\n" +
+            "        hash(cell + 2.0),\n" +
+            "        hash(cell + 3.0)\n" +
+            "    );\n" +
+            "    vec2 starPos = (rand.xy - 0.5) * 0.9;\n" +
+            "    float d = length(local - starPos);\n" +
+            "    float classRand = rand.z;\n" +  // определяет спектральный класс
+            "    vec3 color;\n" +
+            "    float sizeMult;\n" +
+            "    // Вероятности: M=52%, K=20%, G=12%, F=8%, A=5%, B=2%, O=1%\n" +
+            "    if (classRand > 0.48) {\n" +           // M (красный карлик)
+            "        color = vec3(1.0, 0.6, 0.3);\n" +
+            "        sizeMult = 1.0;\n" +
+            "    } else if (classRand > 0.28) {\n" +   // K (оранжевый)
+            "        color = vec3(1.0, 0.8, 0.6);\n" +
+            "        sizeMult = 1.3;\n" +
+            "    } else if (classRand > 0.16) {\n" +   // G (жёлтый)
+            "        color = vec3(1.0, 0.95, 0.8);\n" +
+            "        sizeMult = 1.6;\n" +
+            "    } else if (classRand > 0.08) {\n" +   // F (бело-жёлтый)
+            "        color = vec3(0.9, 0.9, 1.0);\n" +
+            "        sizeMult = 2.0;\n" +
+            "    } else if (classRand > 0.03) {\n" +   // A (белый)
+            "        color = vec3(0.7, 0.8, 1.0);\n" +
+            "        sizeMult = 2.8;\n" +
+            "    } else if (classRand > 0.01) {\n" +   // B (голубой)
+            "        color = vec3(0.5, 0.6, 1.0);\n" +
+            "        sizeMult = 4.0;\n" +
+            "    } else {\n" +                         // O (ярко-голубой)
+            "        color = vec3(0.3, 0.4, 1.0);\n" +
+            "        sizeMult = 6.0;\n" +
+            "    }\n" +
+            "    // Базовый минимальный размер 0.012 (~8px), множитель класса увеличивает его\n" +
+            "    float size = 0.012 * sizeMult;\n" +
+            "    // Яркость зависит от размера (имитация светимости)\n" +
+            "    float brightness = smoothstep(size, 0.0, d) * (0.5 + size * 8.0);\n" +
+            "    // Добавляем яркое ядро для крупных звёзд\n" +
+            "    brightness += smoothstep(size * 0.3, 0.0, d) * step(0.92, rand.w) * 1.5;\n" +
+            "    FragColor = vec4(color * brightness, 1.0);\n" +
             "}"
         );
         float[] verts = {-1f,-1f, 1f,-1f, -1f,1f, 1f,1f};

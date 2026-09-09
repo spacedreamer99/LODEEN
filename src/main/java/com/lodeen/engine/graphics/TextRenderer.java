@@ -24,9 +24,7 @@ public class TextRenderer {
             "uniform sampler2D uTex;\n" +
             "void main(){ FragColor = texture(uTex, vTex); }"
         );
-        // Инвертированные V-координаты, чтобы текст не был вверх ногами
         float[] verts = {
-            // x, y, u, v
             0f, 0f, 0f, 1f,
             1f, 0f, 1f, 1f,
             0f, 1f, 0f, 0f,
@@ -44,12 +42,24 @@ public class TextRenderer {
         glEnableVertexAttribArray(1);
     }
 
-    public void drawText(String text, float x, float y, float scale, int screenW, int screenH) {
-        int tex = createTexture(text);
+    // Новый метод: рисует текст так, чтобы его центр был в (centerX, centerY)
+    public void drawTextCentered(String text, float centerX, float centerY, float scale,
+                                 int screenW, int screenH) {
+        TextureData data = createTexture(text);
+        int tex = data.id;
+        int texW = data.width;
+        int texH = data.height;
+
+        // Вычисляем левый верхний угол с учётом размеров текстуры
+        float quadW = texW * scale;
+        float quadH = texH * scale;
+        float x = centerX - quadW / 2;
+        float y = centerY - quadH / 2;
+
         float ndcX = (x / screenW) * 2 - 1;
         float ndcY = 1 - (y / screenH) * 2;
-        float ndcW = (text.length() * 20 * scale / screenW) * 2;
-        float ndcH = (40 * scale / screenH) * 2;
+        float ndcW = (quadW / screenW) * 2;
+        float ndcH = (quadH / screenH) * 2;
 
         shader.use();
         glUniform2f(glGetUniformLocation(shader.getId(), "uPos"), ndcX, ndcY - ndcH);
@@ -62,16 +72,27 @@ public class TextRenderer {
         glDeleteTextures(tex);
     }
 
-    private int createTexture(String text) {
-        BufferedImage img = new BufferedImage(512, 64, BufferedImage.TYPE_INT_ARGB);
+    private TextureData createTexture(String text) {
+        BufferedImage temp = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D gTemp = temp.createGraphics();
+        gTemp.setFont(new Font("Arial", Font.PLAIN, 24));
+        FontMetrics fm = gTemp.getFontMetrics();
+        int textWidth = fm.stringWidth(text);
+        int textHeight = fm.getHeight();
+        gTemp.dispose();
+
+        int padding = 4;
+        int imgW = textWidth + padding * 2;
+        int imgH = textHeight + padding * 2;
+        BufferedImage img = new BufferedImage(imgW, imgH, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = img.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g.setFont(new Font("Arial", Font.PLAIN, 24));
         g.setColor(Color.WHITE);
-        g.drawString(text, 10, 40);
+        g.drawString(text, padding, fm.getAscent() + padding);
         g.dispose();
 
-        int[] pixels = img.getRGB(0, 0, img.getWidth(), img.getHeight(), null, 0, img.getWidth());
+        int[] pixels = img.getRGB(0, 0, imgW, imgH, null, 0, imgW);
         ByteBuffer buf = ByteBuffer.allocateDirect(pixels.length * 4);
         for (int p : pixels) {
             buf.put((byte) ((p >> 16) & 0xFF));
@@ -86,9 +107,20 @@ public class TextRenderer {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img.getWidth(), img.getHeight(), 0,
-                     GL_RGBA, GL_UNSIGNED_BYTE, buf);
-        return tex;
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, imgW, imgH, 0, GL_RGBA, GL_UNSIGNED_BYTE, buf);
+
+        return new TextureData(tex, imgW, imgH);
+    }
+
+    private static class TextureData {
+        int id;
+        int width;
+        int height;
+        TextureData(int id, int w, int h) {
+            this.id = id;
+            this.width = w;
+            this.height = h;
+        }
     }
 
     public void cleanup() {

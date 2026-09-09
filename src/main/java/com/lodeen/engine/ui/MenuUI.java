@@ -14,7 +14,7 @@ public class MenuUI {
     private int windowedX, windowedY, windowedW, windowedH;
     private String[] labels = {"Singleplayer", "Multiplayer", "Fullscreen", "Encyclopedia", "Settings", "Exit"};
     private int hovered = -1;
-    private static final double FULLSCREEN_COOLDOWN = 4.0;
+    private static final double FULLSCREEN_COOLDOWN = 0.2;
     private double lastFullscreenToggleTime = 0.0;
 
     public MenuUI(long window) {
@@ -62,9 +62,9 @@ public class MenuUI {
 
             // Отрисовка текста
             float textScale = buttonH * 0.02f;
-            float textX = startX + buttonW / 2 - (labels[i].length() * textScale * 0.3f);
-            float textY = y + buttonH / 2 - buttonH * 0.3f;
-            textRenderer.drawText(labels[i], textX, textY, textScale, width, height);
+            float centerX = startX + buttonW / 2;
+            float centerY = y + buttonH / 2;
+            textRenderer.drawTextCentered(labels[i], centerX, centerY, textScale, width, height);
         }
 
         // Обработка клика
