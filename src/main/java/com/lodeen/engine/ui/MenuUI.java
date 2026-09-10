@@ -1,95 +1,83 @@
 package com.lodeen.engine.ui;
 
-import com.lodeen.engine.graphics.RectRenderer;
 import com.lodeen.engine.graphics.StarFieldRenderer;
-import com.lodeen.engine.graphics.TextRenderer;
+import imgui.ImGui;
+import imgui.flag.ImGuiCond;
+import imgui.flag.ImGuiWindowFlags;
 import org.lwjgl.system.MemoryUtil;
 import static org.lwjgl.glfw.GLFW.*;
 
 public class MenuUI {
     private final StarFieldRenderer starField = new StarFieldRenderer();
-    private final RectRenderer rect = new RectRenderer();
-    private final TextRenderer text = new TextRenderer();
     private final long window;
-    private int wx, wy, ww, wh;   // сохранённая оконная геометрия
-    private final String[] labels = {"Singleplayer","Multiplayer","Fullscreen","Encyclopedia","Settings","Exit"};
-    private int hovered = -1;
     private boolean startRequested = false;
-    private boolean wasMouseDown = false;
+    private int wx = 100, wy = 100, ww = 1280, wh = 720;
     private double lastToggle = 0;
 
     public MenuUI(long window) { this.window = window; }
 
-    /** @return true если окно сейчас в полноэкранном режиме. */
+    /** Рендер звёздного фона через OpenGL — вызывается ДО imgui.startFrame(). */
+    public void renderBackground(int w, int h) {
+        starField.render(w, h);
+    }
+
+    /** Рендер кнопок через ImGui — вызывается МЕЖДУ imgui.startFrame() и endFrame(). */
+    public void renderWidgets() {
+        int[] w = new int[1], h = new int[1];
+        glfwGetWindowSize(window, w, h);
+        int W = w[0], H = h[0];
+
+        float panelW = 500, panelH = 520;
+        ImGui.setNextWindowPos(W * 0.5f, H * 0.5f, ImGuiCond.Always, 0.5f, 0.5f);
+        ImGui.setNextWindowSize(panelW, panelH, ImGuiCond.Always);
+
+        int flags = ImGuiWindowFlags.NoTitleBar
+                  | ImGuiWindowFlags.NoResize
+                  | ImGuiWindowFlags.NoMove
+                  | ImGuiWindowFlags.NoCollapse
+                  | ImGuiWindowFlags.NoBackground;
+
+        ImGui.begin("MainMenu", flags);
+
+        float btnW = 360, btnH = 55;
+        float offsetX = (panelW - btnW) / 2;
+
+        // Заголовок
+        ImGui.setCursorPos(offsetX, 20);
+        ImGui.text("LODEEN");
+
+        ImGui.setCursorPos(offsetX, 110);
+
+        if (ImGui.button("Singleplayer", btnW, btnH)) startRequested = true;
+        ImGui.setCursorPosX(offsetX);
+        if (ImGui.button("Multiplayer", btnW, btnH)) System.out.println("Multiplayer (TODO)");
+        ImGui.setCursorPosX(offsetX);
+        if (ImGui.button("Fullscreen", btnW, btnH)) {
+            double now = glfwGetTime();
+            if (now - lastToggle > 0.2) { lastToggle = now; toggleFullscreen(); }
+        }
+        ImGui.setCursorPosX(offsetX);
+        if (ImGui.button("Encyclopedia", btnW, btnH)) System.out.println("Encyclopedia (TODO)");
+        ImGui.setCursorPosX(offsetX);
+        if (ImGui.button("Settings", btnW, btnH)) System.out.println("Settings (TODO)");
+        ImGui.setCursorPosX(offsetX);
+        if (ImGui.button("Exit", btnW, btnH)) glfwSetWindowShouldClose(window, true);
+
+        ImGui.end();
+    }
+
     private boolean isFullscreen() {
         return glfwGetWindowMonitor(window) != MemoryUtil.NULL;
     }
 
-    public void render(float time) {
-        int[] w = new int[1], h = new int[1];
-        glfwGetWindowSize(window, w, h);
-        int W = w[0], H = h[0];
-        starField.render(W, H);
-
-        float bw = 600 * (W / 1280f), bh = 90 * (H / 720f), sp = 14 * (H / 720f);
-        float totalH = labels.length * (bh + sp) - sp;
-        float sx = (W - bw) / 2, sy = (H - totalH) / 2;
-
-        double[] mx = new double[1], my = new double[1];
-        glfwGetCursorPos(window, mx, my);
-        float mX = (float) mx[0], mY = (float) my[0];
-
-        hovered = -1;
-        for (int i = 0; i < labels.length; i++) {
-            float y = sy + i * (bh + sp);
-            boolean inside = mX >= sx && mX <= sx + bw && mY >= y && mY <= y + bh;
-            if (inside) hovered = i;
-            float r = inside ? 0.4f : 0.2f, g = r, b = r, a = inside ? 0.8f : 0.6f;
-            rect.draw(sx, y, bw, bh, W, H, r, g, b, a);
-            text.drawTextCentered(labels[i], sx + bw / 2, y + bh / 2,
-                                  (int) (bh * 0.55f), W, H);
-        }
-
-        boolean isDown = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
-        if (isDown && !wasMouseDown && hovered >= 0) handleClick(hovered);
-        wasMouseDown = isDown;
-    }
-
-    private void handleClick(int i) {
-        switch (i) {
-            case 0: startRequested = true; break;
-            case 1: System.out.println("Multiplayer (TODO)"); break;
-            case 2:
-                double now = glfwGetTime();
-                if (now - lastToggle > 0.2) { lastToggle = now; toggleFullscreen(); }
-                break;
-            case 3: System.out.println("Encyclopedia (TODO)"); break;
-            case 4: System.out.println("Settings (TODO)"); break;
-            case 5: glfwSetWindowShouldClose(window, true); break;
-        }
-    }
-
-    public boolean consumeStartRequest() {
-        if (startRequested) { startRequested = false; return true; }
-        return false;
-    }
-
     private void toggleFullscreen() {
         if (isFullscreen()) {
-            // Из fullscreen — восстанавливаем сохранённую оконную геометрию
-            // (или дефолт 1280x720, если сохранений нет)
-            int rx = (ww > 0) ? wx : 100;
-            int ry = (wy > 0) ? wy : 100;
-            int rw = (ww > 0) ? ww : 1280;
-            int rh = (wh > 0) ? wh : 720;
-            glfwSetWindowMonitor(window, MemoryUtil.NULL, rx, ry, rw, rh, GLFW_DONT_CARE);
+            glfwSetWindowMonitor(window, MemoryUtil.NULL, wx, wy, ww, wh, GLFW_DONT_CARE);
         } else {
-            // Из окна — запоминаем геометрию и уходим в fullscreen
             int[] x = new int[1], y = new int[1], w = new int[1], h = new int[1];
             glfwGetWindowPos(window, x, y);
             glfwGetWindowSize(window, w, h);
             wx = x[0]; wy = y[0]; ww = w[0]; wh = h[0];
-
             long m = glfwGetPrimaryMonitor();
             if (m == MemoryUtil.NULL) return;
             var vm = glfwGetVideoMode(m);
@@ -98,7 +86,12 @@ public class MenuUI {
         }
     }
 
+    public boolean consumeStartRequest() {
+        if (startRequested) { startRequested = false; return true; }
+        return false;
+    }
+
     public void cleanup() {
-        starField.cleanup(); rect.cleanup(); text.cleanup();
+        starField.cleanup();
     }
 }

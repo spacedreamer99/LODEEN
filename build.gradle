@@ -14,6 +14,8 @@ dependencies {
     implementation "org.joml:joml:$jomlVersion"
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
     implementation 'de.javagl:jgltf-model:2.0.4'
+    implementation 'io.github.spair:imgui-java-app:1.86.11'
+    runtimeOnly 'io.github.spair:imgui-java-natives-linux:1.86.11'
 
     def os = System.getProperty('os.name').toLowerCase()
     def natives = os.contains('win') ? 'natives-windows'
