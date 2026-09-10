@@ -1,10 +1,8 @@
 package com.lodeen.engine.scene;
 
 import com.lodeen.engine.graphics.Renderer3D;
+import com.lodeen.engine.graphics.SkyboxRenderer;
 import com.lodeen.engine.graphics.Texture;
-import com.lodeen.engine.model.ModelLoader;
-import com.lodeen.engine.model.ObjectInstance;
-import org.joml.Vector3f;
 import java.util.*;
 import static org.lwjgl.opengl.GL11.*;
 
@@ -13,29 +11,29 @@ public class Scene {
     private InputController input;
     private DebugLogger debug;
     private Renderer3D renderer;
-    private List<ObjectInstance> objects;
+    private SkyboxRenderer skybox;
+    private SceneRenderer sceneRenderer;
+    private List<GameObject> objects;
     private boolean exitRequested = false;
 
     public void init(long window) {
         camera = new Camera();
         renderer = new Renderer3D();
-        objects = ModelLoader.load("/models/planet.glb");
+        skybox = new SkyboxRenderer();
 
-        float radius = 0.001f;
-        for (ObjectInstance oi : objects)
-            radius = Math.max(radius, oi.mesh.getBoundingRadius());
-        camera.fitToRadius(radius);
+        SceneLoader.Loaded loaded = SceneLoader.load("/models/planet.glb");
+        objects = loaded.objects;
+        camera.fitToRadius(loaded.planetRadius);
+        System.out.println("Planet R=" + loaded.planetRadius);
+
+        sceneRenderer = new SceneRenderer(renderer, skybox);
         input = new InputController(window, camera);
         debug = new DebugLogger(window, camera);
-        System.out.println("Loaded objects: " + objects.size() + ", radius=" + radius);
-
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_CULL_FACE);
         glCullFace(GL_BACK);
         glFrontFace(GL_CCW);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glClearColor(0.02f, 0.02f, 0.05f, 1f);
+        glClearColor(0, 0, 0, 1);
     }
 
     public void update(float dt) {
@@ -47,47 +45,23 @@ public class Scene {
     }
 
     public void render(int w, int h) {
-        glViewport(0, 0, w, h);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        List<ObjectInstance> opaque = new ArrayList<>();
-        List<ObjectInstance> transparent = new ArrayList<>();
-        for (ObjectInstance oi : objects) {
-            if (oi.mesh.material.alphaMode == 2) transparent.add(oi);
-            else opaque.add(oi);
-        }
-
-        // Непрозрачные: обычная отрисовка с отсечением задних граней
-        glCullFace(GL_BACK);
-        glDepthMask(true);
-        renderer.render(opaque, camera, w, h);
-
-        // Прозрачные: два прохода — сначала задние стенки, потом передние.
-        // Сортировка по расстоянию теряет смысл: обе половины одной сферы
-        // корректно накладываются именно в этом порядке.
-        glDepthMask(false);
-
-        // 1) задние грани (то, что за сферой, включая дальнюю стенку для наблюдателя внутри)
-        glCullFace(GL_FRONT);
-        renderer.render(transparent, camera, w, h);
-
-        // 2) передние грани (ближняя стенка, включая то, что видно изнутри)
-        glCullFace(GL_BACK);
-        renderer.render(transparent, camera, w, h);
-
-        glDepthMask(true);
+        sceneRenderer.render(objects, camera, w, h);
     }
 
     public boolean shouldExit() { return exitRequested; }
 
     public void cleanup() {
         if (input != null) input.captureMouse(false);
-        Set<Texture> cleaned = Collections.newSetFromMap(new IdentityHashMap<>());
-        for (ObjectInstance oi : objects) {
-            oi.mesh.cleanup();
-            Texture t = oi.mesh.material.baseColorTexture;
-            if (t != null && cleaned.add(t)) t.cleanup();
+        Set<Texture> done = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (GameObject go : objects) {
+            if (go.mesh == null) continue;
+            go.mesh.cleanup();
+            Texture a = go.mesh.material.baseColorTexture;
+            Texture b = go.mesh.material.metallicRoughnessTexture;
+            if (a != null && done.add(a)) a.cleanup();
+            if (b != null && done.add(b)) b.cleanup();
         }
+        skybox.cleanup();
         renderer.cleanup();
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_CULL_FACE);

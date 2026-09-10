@@ -1,8 +1,29 @@
-.gradle/
+# Build
 build/
+out/
+bin/
+*.class
+
+# Gradle
+.gradle/
+gradle-app.setting
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
 .idea/
 *.iml
 .vscode/
+.settings/
+.classpath
+.project
+
+# Blender backup files
+*.blend1
+*.blend2
+
+# OS
 .DS_Store
 Thumbs.db
+
+# Logs
 *.log

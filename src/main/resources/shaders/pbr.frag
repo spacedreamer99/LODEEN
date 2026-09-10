@@ -14,6 +14,8 @@ uniform int uAlphaMode;
 uniform float uAlphaCutoff;
 uniform int uHasTexture;
 uniform sampler2D uBaseColorTex;
+uniform int uHasMRTex;
+uniform sampler2D uMRTex;
 
 const float PI = 3.14159265359;
 
@@ -32,7 +34,7 @@ float geometrySmith(vec3 N, vec3 V, vec3 L, float r) {
            geometrySchlick(max(dot(N, L), 0.0), r);
 }
 vec3 fresnelSchlick(float cosT, vec3 F0) {
-    return F0 + (1.0 - F0) * pow(1.0 - cosT, 5.0);
+    return F0 + (1.0 - F0) * pow(1.0 - abs(cosT), 5.0);
 }
 
 void main() {
@@ -43,32 +45,43 @@ void main() {
     if (uAlphaMode == 1 && alpha < uAlphaCutoff) discard;
     if (alpha < 0.01) discard;
 
+    float rough = uRoughness;
+    float metal = uMetallic;
+    if (uHasMRTex == 1) {
+        vec4 mr = texture(uMRTex, vUV);
+        rough *= mr.g;
+        metal *= mr.b;
+    }
+    rough = clamp(rough, 0.04, 1.0);
+    metal = clamp(metal, 0.0, 1.0);
+
     vec3 albedo = baseColor.rgb;
-    vec3 N = normalize(vNormal);
+    vec3 N_orig = normalize(vNormal);   // нормаль как в модели — наружу
+    vec3 N = N_orig;
+    if (!gl_FrontFacing) N = -N;
     vec3 V = normalize(uCamPos - vWorldPos);
     vec3 L = normalize(uLightPos - vWorldPos);
     vec3 H = normalize(V + L);
 
-    vec3 F0 = mix(vec3(0.04), albedo, uMetallic);
-    float NDF = distributionGGX(N, H, uRoughness);
-    float G = geometrySmith(N, V, L, uRoughness);
-    vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-
-    vec3 specular = (NDF * G * F) /
-        (4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001);
-    vec3 kD = (vec3(1.0) - F) * (1.0 - uMetallic);
+    float NdotV = max(dot(N, V), 0.0);
     float NdotL = max(dot(N, L), 0.0);
-    vec3 Lo = (kD * albedo / PI + specular) * uLightColor * NdotL;
 
-    float up = 0.5 + 0.5 * N.y;
-    vec3 ambient = albedo * (0.18 + 0.12 * up);
-    vec3 color = ambient + Lo;
+    // День/ночь — по ОРИГИНАЛЬНОЙ нормали, независимо от того,
+    // видим ли мы переднюю или заднюю сторону.
+    float dayFactor = smoothstep(-0.15, 0.35, dot(N_orig, L));
 
-    // Атмосфера: мягкое свечение по fresnel-краю
+    vec3 F0 = mix(vec3(0.04), albedo, metal);
+    float NDF = distributionGGX(N, H, rough);
+    float G = geometrySmith(N, V, L, rough);
+    vec3 F = fresnelSchlick(dot(H, V), F0);
+    vec3 specular = (NDF * G * F) / (4.0 * NdotV * NdotL + 0.0001);
+    vec3 kD = (vec3(1.0) - F) * (1.0 - metal);
+    vec3 color = (kD * albedo / PI + specular) * uLightColor * NdotL;
+
+    // BLEND (атмосфера): обнуление на ночной стороне независимо от граней
     if (uAlphaMode == 2) {
-        float fresnel = pow(1.0 - max(dot(N, V), 0.0), 2.5);
-        color = albedo * (0.6 + 1.4 * fresnel);
-        alpha = clamp(alpha * (0.35 + 0.9 * fresnel), 0.0, 1.0);
+        color *= dayFactor;
+        alpha *= dayFactor;
     }
 
     FragColor = vec4(color, alpha);

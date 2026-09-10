@@ -1,7 +1,7 @@
 package com.lodeen.engine.graphics;
 
-import com.lodeen.engine.model.ObjectInstance;
 import com.lodeen.engine.scene.Camera;
+import com.lodeen.engine.scene.GameObject;
 import org.joml.*;
 import java.util.List;
 import static org.lwjgl.opengl.GL30.*;
@@ -15,7 +15,7 @@ public class Renderer3D {
         shader = ShaderProgram.fromResources("/shaders/pbr.vert", "/shaders/pbr.frag");
     }
 
-    public void render(List<ObjectInstance> objects, Camera camera, int w, int h) {
+    public void render(List<GameObject> objects, Camera camera, int w, int h) {
         shader.use();
         setMat4("uView", camera.getView());
         setMat4("uProj", camera.getProjection(w, h));
@@ -23,36 +23,39 @@ public class Renderer3D {
         setVec3("uLightColor", lightColor);
         setVec3("uCamPos", camera.getPosition());
 
-        for (ObjectInstance oi : objects) {
-            setMat4("uModel", oi.transform);
-            setMat3("uNormalMat", new Matrix3f(oi.transform).invert().transpose());
-            Material m = oi.mesh.material;
+        for (GameObject go : objects) {
+            if (go.mesh == null) continue;
+            Matrix4f world = go.worldMatrix();
+            setMat4("uModel", world);
+            setMat3("uNormalMat", new Matrix3f(world).invert().transpose());
+            Material m = go.mesh.material;
             setVec4("uBaseColorFactor", m.baseColorFactor);
             shader.setFloat("uMetallic", m.metallic);
             shader.setFloat("uRoughness", m.roughness);
             shader.setInt("uAlphaMode", m.alphaMode);
             shader.setFloat("uAlphaCutoff", m.alphaCutoff);
-            if (m.baseColorTexture != null) {
-                m.baseColorTexture.bind(0);
-                shader.setInt("uBaseColorTex", 0);
-                shader.setInt("uHasTexture", 1);
-            } else {
-                shader.setInt("uHasTexture", 0);
-            }
-            oi.mesh.draw();
+            bind(m.baseColorTexture, "uBaseColorTex", "uHasTexture", 0);
+            bind(m.metallicRoughnessTexture, "uMRTex", "uHasMRTex", 1);
+            go.mesh.draw();
         }
+    }
+
+    private void bind(Texture tex, String sampler, String flag, int unit) {
+        if (tex != null) {
+            tex.bind(unit);
+            shader.setInt(sampler, unit);
+            shader.setInt(flag, 1);
+        } else shader.setInt(flag, 0);
     }
 
     private void setMat4(String n, Matrix4f m) {
         try (var mem = org.lwjgl.system.MemoryStack.stackPush()) {
-            glUniformMatrix4fv(glGetUniformLocation(shader.getId(), n), false,
-                m.get(mem.mallocFloat(16)));
+            glUniformMatrix4fv(glGetUniformLocation(shader.getId(), n), false, m.get(mem.mallocFloat(16)));
         }
     }
     private void setMat3(String n, Matrix3f m) {
         try (var mem = org.lwjgl.system.MemoryStack.stackPush()) {
-            glUniformMatrix3fv(glGetUniformLocation(shader.getId(), n), false,
-                m.get(mem.mallocFloat(9)));
+            glUniformMatrix3fv(glGetUniformLocation(shader.getId(), n), false, m.get(mem.mallocFloat(9)));
         }
     }
     private void setVec3(String n, Vector3f v) {

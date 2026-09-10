@@ -7,9 +7,9 @@ import static org.lwjgl.opengl.GL30.*;
 public class ShaderProgram {
     private int id;
 
-    public ShaderProgram(String vertexSrc, String fragmentSrc) {
-        int vs = compile(GL_VERTEX_SHADER, vertexSrc);
-        int fs = compile(GL_FRAGMENT_SHADER, fragmentSrc);
+    public ShaderProgram(String v, String f) {
+        int vs = compile(GL_VERTEX_SHADER, resolve(v));
+        int fs = compile(GL_FRAGMENT_SHADER, resolve(f));
         id = glCreateProgram();
         glAttachShader(id, vs); glAttachShader(id, fs); glLinkProgram(id);
         if (glGetProgrami(id, GL_LINK_STATUS) == GL_FALSE)
@@ -18,10 +18,26 @@ public class ShaderProgram {
     }
 
     public static ShaderProgram fromResources(String v, String f) {
-        return new ShaderProgram(load(v), load(f));
+        return new ShaderProgram(read(v), read(f));
     }
 
-    private static String load(String path) {
+    // Раскрывает `// #include "file.glsl"` в содержимое файла из ресурсов
+    private static String resolve(String src) {
+        StringBuilder out = new StringBuilder();
+        for (String line : src.split("\n")) {
+            String t = line.trim();
+            if (t.startsWith("// #include")) {
+                String name = t.substring(t.indexOf('"') + 1, t.lastIndexOf('"'));
+                out.append(read("/shaders/" + name));
+            } else {
+                out.append(line);
+            }
+            out.append('\n');
+        }
+        return out.toString();
+    }
+
+    private static String read(String path) {
         try (InputStream is = ShaderProgram.class.getResourceAsStream(path)) {
             if (is == null) throw new RuntimeException("Shader missing: " + path);
             return new String(is.readAllBytes(), StandardCharsets.UTF_8);

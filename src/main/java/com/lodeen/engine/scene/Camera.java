@@ -26,6 +26,7 @@ public class Camera {
     public Vector3f getPosition() { return position; }
     public Quaternionf getRotation() { return rotation; }
     public float getThrottle() { return throttle; }
+    public float getFov() { return fov; }
 
     public Vector3f forward() { return new Vector3f(0, 0, -1).rotate(rotation); }
     public Vector3f right()   { return new Vector3f(1, 0, 0).rotate(rotation); }
