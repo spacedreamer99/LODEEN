@@ -1,7 +1,7 @@
 package com.lodeen.engine.core;
 
+import com.lodeen.engine.scene.Scene;
 import com.lodeen.engine.ui.MenuUI;
-import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWErrorCallback;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.system.MemoryUtil;
@@ -12,13 +12,12 @@ import static org.lwjgl.opengl.GL11.*;
 public class Window {
     private long handle;
     private int width, height;
-    private String title;
+    private final String title;
     private MenuUI menuUI;
+    private Scene scene;
 
     public Window(String title, int width, int height) {
-        this.title = title;
-        this.width = width;
-        this.height = height;
+        this.title = title; this.width = width; this.height = height;
     }
 
     public void init() {
@@ -30,54 +29,64 @@ public class Window {
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
         handle = glfwCreateWindow(width, height, title, MemoryUtil.NULL, MemoryUtil.NULL);
-        if (handle == MemoryUtil.NULL) throw new RuntimeException("Failed to create window");
+        if (handle == MemoryUtil.NULL) throw new RuntimeException("Window creation failed");
         glfwMakeContextCurrent(handle);
         glfwSwapInterval(1);
         glfwShowWindow(handle);
         GL.createCapabilities();
 
-        // Включаем альфа-блендинг для прозрачных элементов UI
+        glViewport(0, 0, width, height);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
         glClearColor(0, 0, 0, 1);
 
-        // Устанавливаем колбэк изменения размера окна
-        glfwSetFramebufferSizeCallback(handle, (win, newWidth, newHeight) -> {
-            width = newWidth;
-            height = newHeight;
-            glViewport(0, 0, width, height);
+        glfwSetFramebufferSizeCallback(handle, (win, w, h) -> {
+            width = w; height = h;
+            glViewport(0, 0, w, h);
         });
 
         menuUI = new MenuUI(handle);
     }
 
     public void loop() {
-        double lastTime = glfwGetTime();
+        double last = glfwGetTime();
         while (!glfwWindowShouldClose(handle)) {
             double now = glfwGetTime();
-            float time = (float) now;
+            float dt = (float) (now - last);
+            last = now;
 
-            // Получаем актуальные размеры окна
             int[] w = new int[1], h = new int[1];
             glfwGetWindowSize(handle, w, h);
             width = w[0]; height = h[0];
 
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-            menuUI.render(time);
+            if (scene == null) {
+                glViewport(0, 0, width, height);
+                glClearColor(0, 0, 0, 1);
+                glClear(GL_COLOR_BUFFER_BIT);
+                menuUI.render((float) now);
+                if (menuUI.consumeStartRequest()) {
+                    scene = new Scene();
+                    scene.init(handle);
+                }
+            } else {
+                scene.update(dt);
+                scene.render(width, height);
+                if (scene.shouldExit()) {
+                    scene.cleanup();
+                    scene = null;
+                }
+            }
 
             glfwSwapBuffers(handle);
             glfwPollEvents();
         }
-        cleanup();
-    }
-
-    private void cleanup() {
-        if (menuUI != null) menuUI.cleanup();
+        if (scene != null) scene.cleanup();
+        menuUI.cleanup();
         glfwDestroyWindow(handle);
         glfwTerminate();
-        GLFWErrorCallback callback = glfwSetErrorCallback(null);
-        if (callback != null) callback.free();
+        GLFWErrorCallback cb = glfwSetErrorCallback(null);
+        if (cb != null) cb.free();
     }
 }

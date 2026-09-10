@@ -1,0 +1,66 @@
+package com.lodeen.engine.graphics;
+
+import com.lodeen.engine.model.ObjectInstance;
+import com.lodeen.engine.scene.Camera;
+import org.joml.*;
+import java.util.List;
+import static org.lwjgl.opengl.GL30.*;
+
+public class Renderer3D {
+    private final ShaderProgram shader;
+    private final Vector3f lightPos = new Vector3f(5f, 5f, 5f);
+    private final Vector3f lightColor = new Vector3f(3.5f, 3.5f, 3.5f);
+
+    public Renderer3D() {
+        shader = ShaderProgram.fromResources("/shaders/pbr.vert", "/shaders/pbr.frag");
+    }
+
+    public void render(List<ObjectInstance> objects, Camera camera, int w, int h) {
+        shader.use();
+        setMat4("uView", camera.getView());
+        setMat4("uProj", camera.getProjection(w, h));
+        setVec3("uLightPos", lightPos);
+        setVec3("uLightColor", lightColor);
+        setVec3("uCamPos", camera.getPosition());
+
+        for (ObjectInstance oi : objects) {
+            setMat4("uModel", oi.transform);
+            setMat3("uNormalMat", new Matrix3f(oi.transform).invert().transpose());
+            Material m = oi.mesh.material;
+            setVec4("uBaseColorFactor", m.baseColorFactor);
+            shader.setFloat("uMetallic", m.metallic);
+            shader.setFloat("uRoughness", m.roughness);
+            shader.setInt("uAlphaMode", m.alphaMode);
+            shader.setFloat("uAlphaCutoff", m.alphaCutoff);
+            if (m.baseColorTexture != null) {
+                m.baseColorTexture.bind(0);
+                shader.setInt("uBaseColorTex", 0);
+                shader.setInt("uHasTexture", 1);
+            } else {
+                shader.setInt("uHasTexture", 0);
+            }
+            oi.mesh.draw();
+        }
+    }
+
+    private void setMat4(String n, Matrix4f m) {
+        try (var mem = org.lwjgl.system.MemoryStack.stackPush()) {
+            glUniformMatrix4fv(glGetUniformLocation(shader.getId(), n), false,
+                m.get(mem.mallocFloat(16)));
+        }
+    }
+    private void setMat3(String n, Matrix3f m) {
+        try (var mem = org.lwjgl.system.MemoryStack.stackPush()) {
+            glUniformMatrix3fv(glGetUniformLocation(shader.getId(), n), false,
+                m.get(mem.mallocFloat(9)));
+        }
+    }
+    private void setVec3(String n, Vector3f v) {
+        glUniform3f(glGetUniformLocation(shader.getId(), n), v.x, v.y, v.z);
+    }
+    private void setVec4(String n, Vector4f v) {
+        glUniform4f(glGetUniformLocation(shader.getId(), n), v.x, v.y, v.z, v.w);
+    }
+
+    public void cleanup() { shader.cleanup(); }
+}

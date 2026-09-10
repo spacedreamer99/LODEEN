@@ -6,70 +6,66 @@ import com.lodeen.engine.graphics.TextRenderer;
 import static org.lwjgl.glfw.GLFW.*;
 
 public class MenuUI {
-    private StarFieldRenderer starField;
-    private RectRenderer rectRenderer;
-    private TextRenderer textRenderer;
-    private long window;
+    private final StarFieldRenderer starField = new StarFieldRenderer();
+    private final RectRenderer rect = new RectRenderer();
+    private final TextRenderer text = new TextRenderer();
+    private final long window;
     private boolean fullscreen = false;
-    private int windowedX, windowedY, windowedW, windowedH;
-    private String[] labels = {"Singleplayer", "Multiplayer", "Fullscreen", "Encyclopedia", "Settings", "Exit"};
+    private int wx, wy, ww, wh;
+    private final String[] labels = {"Singleplayer","Multiplayer","Fullscreen","Encyclopedia","Settings","Exit"};
     private int hovered = -1;
-    private static final double FULLSCREEN_COOLDOWN = 0.2;
-    private double lastFullscreenToggleTime = 0.0;
-    public MenuUI(long window) {
-        this.window = window;
-        starField = new StarFieldRenderer();
-        rectRenderer = new RectRenderer();
-        textRenderer = new TextRenderer();
-    }
+    private boolean startRequested = false;
+    private double lastToggle = 0;
+
+    public MenuUI(long window) { this.window = window; }
+
     public void render(float time) {
         int[] w = new int[1], h = new int[1];
         glfwGetWindowSize(window, w, h);
-        int width = w[0], height = h[0];
-        starField.render(width, height);
-        float buttonW = 200 * (width / 1280.0f);
-        float buttonH = 40 * (height / 720.0f);
-        float spacing = 10 * (height / 720.0f);
-        float totalH = labels.length * (buttonH + spacing) - spacing;
-        float startX = (width - buttonW) / 2;
-        float startY = (height - totalH) / 2;
+        int W = w[0], H = h[0];
+        starField.render(W, H);
+
+        float bw = 600 * (W / 1280f), bh = 90 * (H / 720f), sp = 14 * (H / 720f);
+        float totalH = labels.length * (bh + sp) - sp;
+        float sx = (W - bw) / 2, sy = (H - totalH) / 2;
+
         double[] mx = new double[1], my = new double[1];
         glfwGetCursorPos(window, mx, my);
-        float mouseX = (float) mx[0];
-        float mouseY = (float) my[0];
+        float mX = (float) mx[0], mY = (float) my[0];
+
         hovered = -1;
         for (int i = 0; i < labels.length; i++) {
-            float y = startY + i * (buttonH + spacing);
-            boolean inside = mouseX >= startX && mouseX <= startX + buttonW &&
-                             mouseY >= y && mouseY <= y + buttonH;
+            float y = sy + i * (bh + sp);
+            boolean inside = mX >= sx && mX <= sx + bw && mY >= y && mY <= y + bh;
             if (inside) hovered = i;
-            float r = 0.2f, g = 0.2f, b = 0.2f, a = 0.6f;
-            if (inside) { r = 0.4f; g = 0.4f; b = 0.4f; a = 0.8f; }
-            rectRenderer.draw(startX, y, buttonW, buttonH, width, height, r, g, b, a);
-            float centerX = startX + buttonW / 2;
-            float centerY = y + buttonH / 2;
-            textRenderer.drawTextCentered(labels[i], centerX, centerY, (int)(buttonH * 0.70f), width, height);
+            float r = inside ? 0.4f : 0.2f, g = r, b = r, a = inside ? 0.8f : 0.6f;
+            rect.draw(sx, y, bw, bh, W, H, r, g, b, a);
+            text.drawTextCentered(labels[i], sx + bw / 2, y + bh / 2,
+                                  (int) (bh * 0.55f), W, H);
         }
-        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && hovered >= 0) {
+        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && hovered >= 0)
             handleClick(hovered);
-        }
     }
-    private void handleClick(int index) {
-        switch (index) {
-            case 0: System.out.println("Singleplayer placeholder"); break;
-            case 1: System.out.println("Multiplayer placeholder"); break;
+
+    private void handleClick(int i) {
+        switch (i) {
+            case 0: startRequested = true; break;
+            case 1: System.out.println("Multiplayer (TODO)"); break;
             case 2:
                 double now = glfwGetTime();
-                if (now - lastFullscreenToggleTime >= FULLSCREEN_COOLDOWN) {
-                    lastFullscreenToggleTime = now;
-                    toggleFullscreen();
-                }
+                if (now - lastToggle > 0.2) { lastToggle = now; toggleFullscreen(); }
                 break;
-            case 3: System.out.println("Encyclopedia placeholder"); break;
-            case 4: System.out.println("Settings placeholder"); break;
+            case 3: System.out.println("Encyclopedia (TODO)"); break;
+            case 4: System.out.println("Settings (TODO)"); break;
             case 5: glfwSetWindowShouldClose(window, true); break;
         }
     }
+
+    public boolean consumeStartRequest() {
+        if (startRequested) { startRequested = false; return true; }
+        return false;
+    }
+
     private void toggleFullscreen() {
         fullscreen = !fullscreen;
         int[] w = new int[1], h = new int[1];
@@ -77,17 +73,16 @@ public class MenuUI {
             int[] x = new int[1], y = new int[1];
             glfwGetWindowPos(window, x, y);
             glfwGetWindowSize(window, w, h);
-            windowedX = x[0]; windowedY = y[0]; windowedW = w[0]; windowedH = h[0];
-            long monitor = glfwGetPrimaryMonitor();
-            var vm = glfwGetVideoMode(monitor);
-            glfwSetWindowMonitor(window, monitor, 0, 0, vm.width(), vm.height(), GLFW_DONT_CARE);
+            wx = x[0]; wy = y[0]; ww = w[0]; wh = h[0];
+            long m = glfwGetPrimaryMonitor();
+            var vm = glfwGetVideoMode(m);
+            glfwSetWindowMonitor(window, m, 0, 0, vm.width(), vm.height(), GLFW_DONT_CARE);
         } else {
-            glfwSetWindowMonitor(window, 0, windowedX, windowedY, windowedW, windowedH, GLFW_DONT_CARE);
+            glfwSetWindowMonitor(window, 0, wx, wy, ww, wh, GLFW_DONT_CARE);
         }
     }
+
     public void cleanup() {
-        starField.cleanup();
-        rectRenderer.cleanup();
-        textRenderer.cleanup();
+        starField.cleanup(); rect.cleanup(); text.cleanup();
     }
 }
