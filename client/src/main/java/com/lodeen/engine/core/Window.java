@@ -5,6 +5,7 @@ import com.lodeen.engine.scene.Scene;
 import com.lodeen.engine.ui.DebugOverlay;
 import com.lodeen.engine.ui.ImGuiLayer;
 import com.lodeen.engine.ui.MenuUI;
+import com.lodeen.engine.ui.PauseMenu;
 import com.lodeen.game.SettingsManager;
 import com.lodeen.game.SettingsUI;
 import org.lwjgl.glfw.GLFWErrorCallback;
@@ -12,11 +13,12 @@ import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.opengl.GL11.*;
 
 public class Window {
-    private enum GameState { MENU, PLAYING }
+    private enum GameState { MENU, PLAYING, PAUSED }
 
     private final long handle;
     private int width, height;
     private MenuUI menuUI;
+    private PauseMenu pauseMenu;
     private Scene scene;
     private GameState state = GameState.MENU;
     private ImGuiLayer imgui;
@@ -31,6 +33,7 @@ public class Window {
         this.height = init.height;
 
         menuUI = new MenuUI(handle);
+        pauseMenu = new PauseMenu();
         imgui = new ImGuiLayer();
         imgui.init(handle);
         overlay = new DebugOverlay();
@@ -54,20 +57,34 @@ public class Window {
             net.tick();
 
             switch (state) {
-                case MENU -> tickMenu(now);
+                case MENU    -> tickMenu(now);
                 case PLAYING -> tickPlaying(dt);
+                case PAUSED  -> tickPaused();
             }
 
             imgui.startFrame();
             if (state == GameState.MENU) menuUI.renderWidgets();
             overlay.render(1.0f / Math.max(0.0001f, lastDt), state.name(), width, height, net);
             if (SettingsManager.isSettingsVisible()) SettingsUI.render(width, height);
+            if (state == GameState.PAUSED) handlePauseMenu();
             imgui.endFrame();
 
             glfwSwapBuffers(handle);
             glfwPollEvents();
         }
         shutdown();
+    }
+
+    private void handlePauseMenu() {
+        PauseMenu.Action act = pauseMenu.render(width, height);
+        if (act == PauseMenu.Action.RESUME) {
+            scene.resume();
+            state = GameState.PLAYING;
+        } else if (act == PauseMenu.Action.EXIT_TO_MENU) {
+            scene.cleanup();
+            scene = null;
+            state = GameState.MENU;
+        }
     }
 
     private void tickMenu(double now) {
@@ -87,11 +104,13 @@ public class Window {
     private void tickPlaying(float dt) {
         scene.update(dt);
         scene.render(width, height);
-        if (scene.shouldExit()) {
-            scene.cleanup();
-            scene = null;
-            state = GameState.MENU;
+        if (scene.isPaused()) {
+            state = GameState.PAUSED;
         }
+    }
+
+    private void tickPaused() {
+        if (scene != null) scene.render(width, height);
     }
 
     private void shutdown() {

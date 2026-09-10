@@ -22,7 +22,7 @@ public class Scene {
     private SceneRenderer sceneRenderer;
     private List<GameObject> objects;
     private NetworkManager net;
-    private boolean exitRequested = false;
+    private boolean paused = false;
 
     public void init(long window, NetworkManager net) {
         this.net = net;
@@ -51,7 +51,7 @@ public class Scene {
         if (dt <= 0) return;
         input.update(dt);
         for (GameObject go : objects) if (go.parent == null) go.updateWorldMatrix(IDENTITY);
-        if (input.isExitRequested()) exitRequested = true;
+        if (input.consumePauseRequest()) pause();
 
         if (net != null && camera != null) {
             var p = camera.getPosition();
@@ -63,7 +63,17 @@ public class Scene {
     }
 
     public void render(int w, int h) { sceneRenderer.render(objects, camera, w, h); }
-    public boolean shouldExit() { return exitRequested; }
+    public boolean isPaused() { return paused; }
+
+    public void pause() {
+        paused = true;
+        if (input != null) input.captureMouse(false);
+    }
+
+    public void resume() {
+        paused = false;
+        if (input != null) input.captureMouse(true);
+    }
 
     public void cleanup() {
         if (input != null) input.captureMouse(false);

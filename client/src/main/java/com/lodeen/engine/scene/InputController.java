@@ -9,30 +9,32 @@ public class InputController {
     private double lastMX, lastMY;
     private boolean firstMouse = true;
     private float sensitivity;
-    private boolean exitRequested = false;
+    private boolean pauseRequested = false;
+    private boolean escWasPressed = false;
 
     public InputController(long window, Camera camera) {
-        this.sensitivity = SettingsManager.get().mouseSensitivity;
         this.window = window;
         this.camera = camera;
+        this.sensitivity = SettingsManager.get().mouseSensitivity;
         captureMouse(true);
         glfwSetScrollCallback(window, (win, xoff, yoff) ->
             camera.multiplyThrottle((float) java.lang.Math.pow(1.15, yoff)));
     }
 
     public void update(float dt) {
-        applyMouse();
+        // ESC — edge detection
+        boolean esc = key(GLFW_KEY_ESCAPE);
+        if (esc && !escWasPressed) pauseRequested = true;
+        escWasPressed = esc;
 
+        applyMouse();
         float fwd = axis(GLFW_KEY_W, GLFW_KEY_S);
         float rgt = axis(GLFW_KEY_D, GLFW_KEY_A);
         float up  = axis(GLFW_KEY_SPACE, GLFW_KEY_LEFT_SHIFT);
         float p   = axis(GLFW_KEY_UP, GLFW_KEY_DOWN);
         float y   = axis(GLFW_KEY_RIGHT, GLFW_KEY_LEFT);
-        float r   = axis(GLFW_KEY_E, GLFW_KEY_Q);   // E = +roll, Q = -roll
-
+        float r   = axis(GLFW_KEY_E, GLFW_KEY_Q);
         camera.update(dt, fwd, rgt, up, p, y, r);
-
-        if (key(GLFW_KEY_ESCAPE)) exitRequested = true;
         if (key(GLFW_KEY_R)) camera.resetRotation();
     }
 
@@ -53,7 +55,10 @@ public class InputController {
         return v;
     }
 
-    public boolean isExitRequested() { return exitRequested; }
+    public boolean consumePauseRequest() {
+        if (pauseRequested) { pauseRequested = false; return true; }
+        return false;
+    }
 
     public void captureMouse(boolean capture) {
         glfwSetInputMode(window, GLFW_CURSOR,
