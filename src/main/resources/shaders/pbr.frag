@@ -16,6 +16,7 @@ uniform int uHasTexture;
 uniform sampler2D uBaseColorTex;
 uniform int uHasMRTex;
 uniform sampler2D uMRTex;
+uniform int uCamInside;
 
 const float PI = 3.14159265359;
 
@@ -56,19 +57,61 @@ void main() {
     metal = clamp(metal, 0.0, 1.0);
 
     vec3 albedo = baseColor.rgb;
-    vec3 N_orig = normalize(vNormal);   // нормаль как в модели — наружу
-    vec3 N = N_orig;
-    if (!gl_FrontFacing && uAlphaMode != 2) N = -N;
+    vec3 N_orig = normalize(vNormal);
     vec3 V = normalize(uCamPos - vWorldPos);
     vec3 L = normalize(uLightPos - vWorldPos);
     vec3 H = normalize(V + L);
 
+    // ============ ОБЛАКА / АТМОСФЕРА ============
+    if (uAlphaMode == 2) {
+        // Одна стенка: снаружи — front, изнутри — back.
+        // Убирает наложение двух стенок и артефакты UV.
+        bool wantFront = (uCamInside == 0);
+        if (gl_FrontFacing != wantFront) discard;
+
+        // Освещённость: до терминатора — 1, за ним — плавно в 0.
+        float dayFactor = smoothstep(-0.10, 0.20, dot(N_orig, L));
+
+        // Плотность облаков из alpha-канала текстуры.
+        // Это ДИКТУЕТ прозрачность вне зависимости от дня/ночи —
+        // поэтому ночью облака не пропускают звёзды.
+        float coverage = alpha;
+
+        // Но днём облака выглядят тоньше, потому что освещены с боков
+        // и рассеивают свет — этот эффект даём через минимум прозрачности
+        // только на дневной стороне.
+        float minTransparency = mix(0.0, 0.35, dayFactor);
+        float finalAlpha = max(coverage, minTransparency);
+        // Гарантируем непрозрачность при плотной текстуре ночью
+        if (dayFactor < 0.05) finalAlpha = coverage;
+
+        if (finalAlpha < 0.01) discard;
+
+        // Цвет: яркость зависит от дня/ночи
+        vec3 N = N_orig;
+        float NdotV = max(dot(N, V), 0.0);
+        float NdotL = max(dot(N, L), 0.0);
+
+        vec3 F0 = mix(vec3(0.04), albedo, metal);
+        float NDF = distributionGGX(N, H, rough);
+        float G = geometrySmith(N, V, L, rough);
+        vec3 F = fresnelSchlick(dot(H, V), F0);
+        vec3 specular = (NDF * G * F) / (4.0 * NdotV * NdotL + 0.0001);
+        vec3 kD = (vec3(1.0) - F) * (1.0 - metal);
+        vec3 color = (kD * albedo / PI + specular) * uLightColor * NdotL;
+
+        // Ночь — почти чёрный. День — полный цвет.
+        color *= dayFactor;
+
+        FragColor = vec4(pow(color, vec3(1.0/2.2)), finalAlpha);
+        return;
+    }
+
+    // ============ ОБЫЧНЫЕ МАТЕРИАЛЫ ============
+    vec3 N = N_orig;
+    if (!gl_FrontFacing) N = -N;
     float NdotV = max(dot(N, V), 0.0);
     float NdotL = max(dot(N, L), 0.0);
-
-    // День/ночь — по ОРИГИНАЛЬНОЙ нормали, независимо от того,
-    // видим ли мы переднюю или заднюю сторону.
-    float dayFactor = smoothstep(-0.15, 0.35, dot(N_orig, L));
 
     vec3 F0 = mix(vec3(0.04), albedo, metal);
     float NDF = distributionGGX(N, H, rough);
@@ -77,12 +120,6 @@ void main() {
     vec3 specular = (NDF * G * F) / (4.0 * NdotV * NdotL + 0.0001);
     vec3 kD = (vec3(1.0) - F) * (1.0 - metal);
     vec3 color = (kD * albedo / PI + specular) * uLightColor * NdotL;
-
-    // BLEND (атмосфера): обнуление на ночной стороне независимо от граней
-    if (uAlphaMode == 2) {
-        color *= dayFactor;
-        alpha *= dayFactor;
-    }
 
     FragColor = vec4(pow(color, vec3(1.0/2.2)), alpha);
 }

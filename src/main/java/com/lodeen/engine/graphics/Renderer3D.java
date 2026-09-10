@@ -23,6 +23,18 @@ public class Renderer3D {
         setVec3("uLightColor", lightColor);
         setVec3("uCamPos", camera.getPosition());
 
+        // Найти первую атмосферу (BLEND-материал) и проверить: камера внутри неё?
+        Vector3f camPos = camera.getPosition();
+        int camInside = 0;
+        for (GameObject go : objects) {
+            if (go.mesh == null || go.mesh.material == null) continue;
+            if (go.mesh.material.alphaMode != 2) continue;
+            Vector3f center = go.worldPosition();
+            float r = go.boundingRadius();
+            if (camPos.distance(center) < r) { camInside = 1; break; }
+        }
+        shader.setInt("uCamInside", camInside);
+
         for (GameObject go : objects) {
             if (go.mesh == null) continue;
             Matrix4f world = go.worldMatrix();

@@ -3,6 +3,7 @@ package com.lodeen.engine.ui;
 import com.lodeen.engine.graphics.RectRenderer;
 import com.lodeen.engine.graphics.StarFieldRenderer;
 import com.lodeen.engine.graphics.TextRenderer;
+import org.lwjgl.system.MemoryUtil;
 import static org.lwjgl.glfw.GLFW.*;
 
 public class MenuUI {
@@ -10,15 +11,19 @@ public class MenuUI {
     private final RectRenderer rect = new RectRenderer();
     private final TextRenderer text = new TextRenderer();
     private final long window;
-    private boolean fullscreen = false;
-    private int wx, wy, ww, wh;
+    private int wx, wy, ww, wh;   // сохранённая оконная геометрия
     private final String[] labels = {"Singleplayer","Multiplayer","Fullscreen","Encyclopedia","Settings","Exit"};
     private int hovered = -1;
     private boolean startRequested = false;
-    private double lastToggle = 0;
     private boolean wasMouseDown = false;
+    private double lastToggle = 0;
 
     public MenuUI(long window) { this.window = window; }
+
+    /** @return true если окно сейчас в полноэкранном режиме. */
+    private boolean isFullscreen() {
+        return glfwGetWindowMonitor(window) != MemoryUtil.NULL;
+    }
 
     public void render(float time) {
         int[] w = new int[1], h = new int[1];
@@ -45,7 +50,6 @@ public class MenuUI {
                                   (int) (bh * 0.55f), W, H);
         }
 
-        // edge-detection: реагируем только на переход up -> down
         boolean isDown = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
         if (isDown && !wasMouseDown && hovered >= 0) handleClick(hovered);
         wasMouseDown = isDown;
@@ -71,18 +75,26 @@ public class MenuUI {
     }
 
     private void toggleFullscreen() {
-        fullscreen = !fullscreen;
-        int[] w = new int[1], h = new int[1];
-        if (fullscreen) {
-            int[] x = new int[1], y = new int[1];
+        if (isFullscreen()) {
+            // Из fullscreen — восстанавливаем сохранённую оконную геометрию
+            // (или дефолт 1280x720, если сохранений нет)
+            int rx = (ww > 0) ? wx : 100;
+            int ry = (wy > 0) ? wy : 100;
+            int rw = (ww > 0) ? ww : 1280;
+            int rh = (wh > 0) ? wh : 720;
+            glfwSetWindowMonitor(window, MemoryUtil.NULL, rx, ry, rw, rh, GLFW_DONT_CARE);
+        } else {
+            // Из окна — запоминаем геометрию и уходим в fullscreen
+            int[] x = new int[1], y = new int[1], w = new int[1], h = new int[1];
             glfwGetWindowPos(window, x, y);
             glfwGetWindowSize(window, w, h);
             wx = x[0]; wy = y[0]; ww = w[0]; wh = h[0];
+
             long m = glfwGetPrimaryMonitor();
+            if (m == MemoryUtil.NULL) return;
             var vm = glfwGetVideoMode(m);
+            if (vm == null) return;
             glfwSetWindowMonitor(window, m, 0, 0, vm.width(), vm.height(), GLFW_DONT_CARE);
-        } else {
-            glfwSetWindowMonitor(window, 0, wx, wy, ww, wh, GLFW_DONT_CARE);
         }
     }
 

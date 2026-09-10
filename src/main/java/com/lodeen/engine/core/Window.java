@@ -3,6 +3,7 @@ package com.lodeen.engine.core;
 import com.lodeen.engine.scene.Scene;
 import com.lodeen.engine.ui.MenuUI;
 import org.lwjgl.glfw.GLFWErrorCallback;
+import org.lwjgl.glfw.GLFWVidMode;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.system.MemoryUtil;
 
@@ -33,7 +34,15 @@ public class Window {
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-        handle = glfwCreateWindow(width, height, title, MemoryUtil.NULL, MemoryUtil.NULL);
+        // Fullscreen на основном мониторе сразу при запуске
+        long monitor = glfwGetPrimaryMonitor();
+        GLFWVidMode mode = monitor != MemoryUtil.NULL ? glfwGetVideoMode(monitor) : null;
+        if (mode != null) {
+            width = mode.width();
+            height = mode.height();
+        }
+        handle = glfwCreateWindow(width, height, title,
+                monitor, MemoryUtil.NULL);
         if (handle == MemoryUtil.NULL) throw new RuntimeException("Window creation failed");
         glfwMakeContextCurrent(handle);
         glfwSwapInterval(1);

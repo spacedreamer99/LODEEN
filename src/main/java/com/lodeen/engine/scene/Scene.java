@@ -27,6 +27,7 @@ public class Scene {
         SceneLoader.Loaded loaded = SceneLoader.load("/models/planet.glb");
         objects = loaded.objects;
         camera.fitToRadius(loaded.planetRadius);
+        skybox.setWaterRadius(loaded.planetRadius);
         System.out.println("Planet R=" + loaded.planetRadius);
 
         sceneRenderer = new SceneRenderer(renderer, skybox);
@@ -45,7 +46,6 @@ public class Scene {
         input.update(dt);
         debug.update(dt);
 
-        // Пересчёт world-матриц: корневые объекты рекурсивно тянут за собой детей
         for (GameObject go : objects) {
             if (go.parent == null) go.updateWorldMatrix(IDENTITY);
         }

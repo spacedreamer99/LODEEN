@@ -36,14 +36,12 @@ public class SkyboxRenderer {
             glUniformMatrix3fv(shader.getUniformLocation("uCamRot"), false,
                 rot.get(mem.mallocFloat(9)));
         }
+        Vector3f cam = camera.getPosition();
+        glUniform3f(shader.getUniformLocation("uCamPos"), cam.x, cam.y, cam.z);
         glUniform1f(shader.getUniformLocation("uFov"),
             (float) java.lang.Math.toRadians(camera.getFov()));
         glUniform2f(shader.getUniformLocation("uResolution"), width, height);
-
-        Vector3f cam = camera.getPosition();
-        float camDist = (float) java.lang.Math.sqrt(cam.x*cam.x + cam.y*cam.y + cam.z*cam.z);
-        boolean underwater = camDist < waterRadius;
-        shader.setInt("uUnderwater", underwater ? 1 : 0);
+        glUniform1f(shader.getUniformLocation("uWaterRadius"), waterRadius);
 
         glBindVertexArray(vao);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);

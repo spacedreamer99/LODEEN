@@ -28,21 +28,21 @@ public class SceneRenderer {
             else opaque.add(go);
         }
 
-        // Опаковые — с включённым culling (его включает Scene.init)
+        // --- Opaque ---
         glDisable(GL_BLEND);
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
         glDepthMask(true);
         renderer.render(opaque, camera, w, h);
 
-        // Прозрачные — два прохода (back faces, потом front faces), без записи в depth
+        // --- Transparent: один проход, БЕЗ culling — видны обе стенки сферы ---
         if (!transparent.isEmpty()) {
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glEnable(GL_CULL_FACE);
-            glCullFace(GL_FRONT);
+            glDisable(GL_CULL_FACE);      // ← обе стенки видны (снаружи front, изнутри back)
             glDepthMask(false);
             renderer.render(transparent, camera, w, h);
-            glCullFace(GL_BACK);
-            renderer.render(transparent, camera, w, h);
+            glEnable(GL_CULL_FACE);
             glDepthMask(true);
         }
     }
