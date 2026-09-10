@@ -1,5 +1,8 @@
 package com.lodeen.engine.graphics;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
@@ -7,6 +10,8 @@ import java.nio.ByteBuffer;
 import static org.lwjgl.opengl.GL30.*;
 
 public class Texture {
+    private static final Logger log = LoggerFactory.getLogger(Texture.class);
+
     private final int id;
     private final int width, height;
 
@@ -47,9 +52,7 @@ public class Texture {
                                 || minFilter == GL_LINEAR_MIPMAP_LINEAR;
             if (needsMipmaps) glGenerateMipmap(GL_TEXTURE_2D);
             glBindTexture(GL_TEXTURE_2D, 0);
-            System.out.println("Texture loaded: " + width + "x" + height
-                + " mag=" + filterName(magFilter)
-                + " min=" + filterName(minFilter));
+            log.debug("Texture loaded: {}x{} mag={} min={}", width, height, filterName(magFilter), filterName(minFilter));
         } catch (Exception e) {
             throw new RuntimeException("Texture load failed", e);
         }

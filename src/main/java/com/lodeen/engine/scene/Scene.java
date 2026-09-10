@@ -4,15 +4,17 @@ import com.lodeen.engine.graphics.Renderer3D;
 import com.lodeen.engine.graphics.SkyboxRenderer;
 import com.lodeen.engine.graphics.Texture;
 import org.joml.Matrix4f;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.*;
 import static org.lwjgl.opengl.GL11.*;
 
 public class Scene {
+    private static final Logger log = LoggerFactory.getLogger(Scene.class);
     private static final Matrix4f IDENTITY = new Matrix4f();
 
     private Camera camera;
     private InputController input;
-    private DebugLogger debug;
     private Renderer3D renderer;
     private SkyboxRenderer skybox;
     private SceneRenderer sceneRenderer;
@@ -28,11 +30,10 @@ public class Scene {
         objects = loaded.objects;
         camera.fitToRadius(loaded.planetRadius);
         skybox.setWaterRadius(loaded.planetRadius);
-        System.out.println("Planet R=" + loaded.planetRadius);
+        log.info("Planet loaded, R={}", loaded.planetRadius);
 
         sceneRenderer = new SceneRenderer(renderer, skybox);
         input = new InputController(window, camera);
-        debug = new DebugLogger(window, camera);
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_CULL_FACE);
         glCullFace(GL_BACK);
@@ -44,7 +45,6 @@ public class Scene {
         if (dt > 0.1f) dt = 0.1f;
         if (dt <= 0) return;
         input.update(dt);
-        debug.update(dt);
 
         for (GameObject go : objects) {
             if (go.parent == null) go.updateWorldMatrix(IDENTITY);

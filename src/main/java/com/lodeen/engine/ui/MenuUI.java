@@ -1,6 +1,8 @@
 package com.lodeen.engine.ui;
 
 import com.lodeen.engine.graphics.StarFieldRenderer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import imgui.ImGui;
 import imgui.flag.ImGuiCond;
 import imgui.flag.ImGuiWindowFlags;
@@ -8,6 +10,8 @@ import org.lwjgl.system.MemoryUtil;
 import static org.lwjgl.glfw.GLFW.*;
 
 public class MenuUI {
+    private static final Logger log = LoggerFactory.getLogger(MenuUI.class);
+
     private final StarFieldRenderer starField = new StarFieldRenderer();
     private final long window;
     private boolean startRequested = false;
@@ -50,16 +54,16 @@ public class MenuUI {
 
         if (ImGui.button("Singleplayer", btnW, btnH)) startRequested = true;
         ImGui.setCursorPosX(offsetX);
-        if (ImGui.button("Multiplayer", btnW, btnH)) System.out.println("Multiplayer (TODO)");
+        if (ImGui.button("Multiplayer", btnW, btnH)) log.info("Multiplayer clicked (TODO)");
         ImGui.setCursorPosX(offsetX);
         if (ImGui.button("Fullscreen", btnW, btnH)) {
             double now = glfwGetTime();
             if (now - lastToggle > 0.2) { lastToggle = now; toggleFullscreen(); }
         }
         ImGui.setCursorPosX(offsetX);
-        if (ImGui.button("Encyclopedia", btnW, btnH)) System.out.println("Encyclopedia (TODO)");
+        if (ImGui.button("Encyclopedia", btnW, btnH)) log.info("Encyclopedia clicked (TODO)");
         ImGui.setCursorPosX(offsetX);
-        if (ImGui.button("Settings", btnW, btnH)) System.out.println("Settings (TODO)");
+        if (ImGui.button("Settings", btnW, btnH)) log.info("Settings clicked (TODO)");
         ImGui.setCursorPosX(offsetX);
         if (ImGui.button("Exit", btnW, btnH)) glfwSetWindowShouldClose(window, true);
 
