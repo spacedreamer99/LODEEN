@@ -7,6 +7,8 @@ public class DebugLogger {
     private final long window;
     private final Camera camera;
     private double timer = 0;
+    private int frames = 0;
+    private float fpsAccum = 0;
     private static final double INTERVAL = 0.25;
 
     public DebugLogger(long window, Camera camera) {
@@ -15,9 +17,15 @@ public class DebugLogger {
     }
 
     public void update(float dt) {
+        frames++;
+        fpsAccum += dt;
         timer += dt;
         if (timer < INTERVAL) return;
+
+        float fps = frames / fpsAccum;
         timer = 0;
+        frames = 0;
+        fpsAccum = 0;
 
         Vector3f p = camera.getPosition();
         Vector3f f = camera.forward();
@@ -39,10 +47,11 @@ public class DebugLogger {
         check(keys, GLFW_KEY_E, "E");
 
         System.out.printf(
-            "[DBG] pos=(%6.2f,%6.2f,%6.2f) " +
+            "[DBG] fps=%5.1f pos=(%6.2f,%6.2f,%6.2f) " +
             "fwd=(%5.2f,%5.2f,%5.2f) " +
             "up=(%5.2f,%5.2f,%5.2f) " +
             "right=(%5.2f,%5.2f,%5.2f) keys=[%s]%n",
+            fps,
             p.x, p.y, p.z,
             f.x, f.y, f.z,
             u.x, u.y, u.z,

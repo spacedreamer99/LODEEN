@@ -58,7 +58,7 @@ void main() {
     vec3 albedo = baseColor.rgb;
     vec3 N_orig = normalize(vNormal);   // нормаль как в модели — наружу
     vec3 N = N_orig;
-    if (!gl_FrontFacing) N = -N;
+    if (!gl_FrontFacing && uAlphaMode != 2) N = -N;
     vec3 V = normalize(uCamPos - vWorldPos);
     vec3 L = normalize(uLightPos - vWorldPos);
     vec3 H = normalize(V + L);

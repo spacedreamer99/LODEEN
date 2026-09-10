@@ -3,10 +3,13 @@ package com.lodeen.engine.scene;
 import com.lodeen.engine.graphics.Renderer3D;
 import com.lodeen.engine.graphics.SkyboxRenderer;
 import com.lodeen.engine.graphics.Texture;
+import org.joml.Matrix4f;
 import java.util.*;
 import static org.lwjgl.opengl.GL11.*;
 
 public class Scene {
+    private static final Matrix4f IDENTITY = new Matrix4f();
+
     private Camera camera;
     private InputController input;
     private DebugLogger debug;
@@ -41,6 +44,12 @@ public class Scene {
         if (dt <= 0) return;
         input.update(dt);
         debug.update(dt);
+
+        // Пересчёт world-матриц: корневые объекты рекурсивно тянут за собой детей
+        for (GameObject go : objects) {
+            if (go.parent == null) go.updateWorldMatrix(IDENTITY);
+        }
+
         if (input.isExitRequested()) exitRequested = true;
     }
 
@@ -52,17 +61,19 @@ public class Scene {
 
     public void cleanup() {
         if (input != null) input.captureMouse(false);
-        Set<Texture> done = Collections.newSetFromMap(new IdentityHashMap<>());
-        for (GameObject go : objects) {
-            if (go.mesh == null) continue;
-            go.mesh.cleanup();
-            Texture a = go.mesh.material.baseColorTexture;
-            Texture b = go.mesh.material.metallicRoughnessTexture;
-            if (a != null && done.add(a)) a.cleanup();
-            if (b != null && done.add(b)) b.cleanup();
+        if (objects != null) {
+            Set<Texture> done = Collections.newSetFromMap(new IdentityHashMap<>());
+            for (GameObject go : objects) {
+                if (go.mesh == null) continue;
+                go.mesh.cleanup();
+                Texture a = go.mesh.material.baseColorTexture;
+                Texture b = go.mesh.material.metallicRoughnessTexture;
+                if (a != null && done.add(a)) a.cleanup();
+                if (b != null && done.add(b)) b.cleanup();
+            }
         }
-        skybox.cleanup();
-        renderer.cleanup();
+        if (skybox != null) skybox.cleanup();
+        if (renderer != null) renderer.cleanup();
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_CULL_FACE);
     }

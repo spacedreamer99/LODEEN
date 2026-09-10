@@ -13,18 +13,25 @@ public class GameObject {
     public GameObject parent;
     public final List<GameObject> children = new ArrayList<>();
 
+    private final Matrix4f worldMatrix = new Matrix4f();
+
     public void addChild(GameObject child) {
         child.parent = this;
         children.add(child);
     }
 
-    public Matrix4f worldMatrix() {
-        if (parent == null) return transform.localMatrix();
-        return new Matrix4f(parent.worldMatrix()).mul(transform.localMatrix());
+    /** Пересчитывает world-матрицу и рекурсивно — всех детей.
+     *  Вызывается один раз за кадр из Scene.update(). */
+    public void updateWorldMatrix(Matrix4f parentWorld) {
+        worldMatrix.set(parentWorld).mul(transform.localMatrix());
+        for (GameObject c : children) c.updateWorldMatrix(worldMatrix);
     }
 
+    /** Только для чтения. Актуальна после updateWorldMatrix(). */
+    public Matrix4f worldMatrix() { return worldMatrix; }
+
     public Vector3f worldPosition() {
-        return worldMatrix().getTranslation(new Vector3f());
+        return worldMatrix.getTranslation(new Vector3f());
     }
 
     public boolean isTransparent() {

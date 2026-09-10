@@ -10,11 +10,14 @@ import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.opengl.GL11.*;
 
 public class Window {
+    private enum GameState { MENU, PLAYING }
+
     private long handle;
     private int width, height;
     private final String title;
     private MenuUI menuUI;
     private Scene scene;
+    private GameState state = GameState.MENU;
 
     public Window(String title, int width, int height) {
         this.title = title; this.width = width; this.height = height;
@@ -61,32 +64,41 @@ public class Window {
             glfwGetWindowSize(handle, w, h);
             width = w[0]; height = h[0];
 
-            if (scene == null) {
-                glViewport(0, 0, width, height);
-                glClearColor(0, 0, 0, 1);
-                glClear(GL_COLOR_BUFFER_BIT);
-                menuUI.render((float) now);
-                if (menuUI.consumeStartRequest()) {
-                    scene = new Scene();
-                    scene.init(handle);
-                }
-            } else {
-                scene.update(dt);
-                scene.render(width, height);
-                if (scene.shouldExit()) {
-                    scene.cleanup();
-                    scene = null;
-                }
+            switch (state) {
+                case MENU -> tickMenu(now);
+                case PLAYING -> tickPlaying(dt);
             }
 
             glfwSwapBuffers(handle);
             glfwPollEvents();
         }
         if (scene != null) scene.cleanup();
-        menuUI.cleanup();
+        if (menuUI != null) menuUI.cleanup();
         glfwDestroyWindow(handle);
         glfwTerminate();
         GLFWErrorCallback cb = glfwSetErrorCallback(null);
         if (cb != null) cb.free();
+    }
+
+    private void tickMenu(double now) {
+        glViewport(0, 0, width, height);
+        glClearColor(0, 0, 0, 1);
+        glClear(GL_COLOR_BUFFER_BIT);
+        menuUI.render((float) now);
+        if (menuUI.consumeStartRequest()) {
+            scene = new Scene();
+            scene.init(handle);
+            state = GameState.PLAYING;
+        }
+    }
+
+    private void tickPlaying(float dt) {
+        scene.update(dt);
+        scene.render(width, height);
+        if (scene.shouldExit()) {
+            scene.cleanup();
+            scene = null;
+            state = GameState.MENU;
+        }
     }
 }
