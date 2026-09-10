@@ -79,7 +79,7 @@ public class Window {
         menuUI.renderBackground(width, height);
         if (menuUI.consumeStartRequest()) {
             scene = new Scene();
-            scene.init(handle);
+            scene.init(handle, net);
             state = GameState.PLAYING;
         }
     }

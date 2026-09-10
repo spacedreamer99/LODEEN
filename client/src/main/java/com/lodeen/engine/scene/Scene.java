@@ -1,9 +1,10 @@
 package com.lodeen.engine.scene;
 
-import com.lodeen.game.SettingsManager;
+import com.lodeen.client.net.NetworkManager;
 import com.lodeen.engine.graphics.Renderer3D;
 import com.lodeen.engine.graphics.SkyboxRenderer;
 import com.lodeen.engine.graphics.Texture;
+import com.lodeen.game.SettingsManager;
 import org.joml.Matrix4f;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,9 +21,11 @@ public class Scene {
     private SkyboxRenderer skybox;
     private SceneRenderer sceneRenderer;
     private List<GameObject> objects;
+    private NetworkManager net;
     private boolean exitRequested = false;
 
-    public void init(long window) {
+    public void init(long window, NetworkManager net) {
+        this.net = net;
         SettingsManager.load();
         camera = new Camera();
         renderer = new Renderer3D();
@@ -47,18 +50,19 @@ public class Scene {
         if (dt > 0.1f) dt = 0.1f;
         if (dt <= 0) return;
         input.update(dt);
-
-        for (GameObject go : objects) {
-            if (go.parent == null) go.updateWorldMatrix(IDENTITY);
-        }
-
+        for (GameObject go : objects) if (go.parent == null) go.updateWorldMatrix(IDENTITY);
         if (input.isExitRequested()) exitRequested = true;
+
+        if (net != null && camera != null) {
+            var p = camera.getPosition();
+            var f = camera.forward();
+            float yaw = (float) Math.toDegrees(Math.atan2(f.x, -f.z));
+            float pitch = (float) Math.toDegrees(Math.asin(-f.y));
+            net.sendPlayerState(p.x, p.y, p.z, yaw, pitch);
+        }
     }
 
-    public void render(int w, int h) {
-        sceneRenderer.render(objects, camera, w, h);
-    }
-
+    public void render(int w, int h) { sceneRenderer.render(objects, camera, w, h); }
     public boolean shouldExit() { return exitRequested; }
 
     public void cleanup() {

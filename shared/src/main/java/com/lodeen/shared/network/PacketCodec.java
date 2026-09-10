@@ -16,6 +16,8 @@ public class PacketCodec {
         register("pong",      PongPacket.class);
         register("handshake", HandshakePacket.class);
         register("serverinfo", ServerInfoPacket.class);
+        register("playerupdate", PlayerUpdatePacket.class);
+        register("worldsnapshot", WorldSnapshotPacket.class);
     }
 
     public static void register(String id, Class<? extends Packet> clazz) {

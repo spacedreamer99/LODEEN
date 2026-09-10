@@ -9,6 +9,7 @@ import static org.lwjgl.opengl.GL11.*;
 public class SceneRenderer {
     private final Renderer3D renderer;
     private final SkyboxRenderer skybox;
+    private final RemotePlayerRenderer remotePlayers = new RemotePlayerRenderer();
 
     public SceneRenderer(Renderer3D renderer, SkyboxRenderer skybox) {
         this.renderer = renderer;
@@ -28,22 +29,22 @@ public class SceneRenderer {
             else opaque.add(go);
         }
 
-        // --- Opaque ---
         glDisable(GL_BLEND);
         glEnable(GL_CULL_FACE);
         glCullFace(GL_BACK);
         glDepthMask(true);
         renderer.render(opaque, camera, w, h);
 
-        // --- Transparent: один проход, БЕЗ culling — видны обе стенки сферы ---
         if (!transparent.isEmpty()) {
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glDisable(GL_CULL_FACE);      // ← обе стенки видны (снаружи front, изнутри back)
+            glDisable(GL_CULL_FACE);
             glDepthMask(false);
             renderer.render(transparent, camera, w, h);
             glEnable(GL_CULL_FACE);
             glDepthMask(true);
         }
+
+        remotePlayers.render(camera, w, h);
     }
 }
