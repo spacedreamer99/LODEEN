@@ -16,6 +16,7 @@ public class MenuUI {
     private int hovered = -1;
     private boolean startRequested = false;
     private double lastToggle = 0;
+    private boolean wasMouseDown = false;
 
     public MenuUI(long window) { this.window = window; }
 
@@ -43,8 +44,11 @@ public class MenuUI {
             text.drawTextCentered(labels[i], sx + bw / 2, y + bh / 2,
                                   (int) (bh * 0.55f), W, H);
         }
-        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && hovered >= 0)
-            handleClick(hovered);
+
+        // edge-detection: реагируем только на переход up -> down
+        boolean isDown = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+        if (isDown && !wasMouseDown && hovered >= 0) handleClick(hovered);
+        wasMouseDown = isDown;
     }
 
     private void handleClick(int i) {

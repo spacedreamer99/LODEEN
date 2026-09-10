@@ -28,9 +28,12 @@ public class SceneRenderer {
             else opaque.add(go);
         }
 
-        glDisable(GL_BLEND); glDisable(GL_CULL_FACE); glDepthMask(true);
+        // Опаковые — с включённым culling (его включает Scene.init)
+        glDisable(GL_BLEND);
+        glDepthMask(true);
         renderer.render(opaque, camera, w, h);
 
+        // Прозрачные — два прохода (back faces, потом front faces), без записи в depth
         if (!transparent.isEmpty()) {
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);

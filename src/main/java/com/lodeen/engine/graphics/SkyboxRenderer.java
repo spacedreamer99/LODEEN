@@ -33,21 +33,17 @@ public class SkyboxRenderer {
         shader.use();
         Matrix3f rot = new Matrix3f().rotation(camera.getRotation());
         try (var mem = org.lwjgl.system.MemoryStack.stackPush()) {
-            glUniformMatrix3fv(glGetUniformLocation(shader.getId(), "uCamRot"), false,
+            glUniformMatrix3fv(shader.getUniformLocation("uCamRot"), false,
                 rot.get(mem.mallocFloat(9)));
         }
-        glUniform1f(glGetUniformLocation(shader.getId(), "uFov"),
+        glUniform1f(shader.getUniformLocation("uFov"),
             (float) java.lang.Math.toRadians(camera.getFov()));
-        glUniform2f(glGetUniformLocation(shader.getId(), "uResolution"), width, height);
+        glUniform2f(shader.getUniformLocation("uResolution"), width, height);
 
-        // Параметры подводного тумана — те же, что в Renderer3D
         Vector3f cam = camera.getPosition();
         float camDist = (float) java.lang.Math.sqrt(cam.x*cam.x + cam.y*cam.y + cam.z*cam.z);
         boolean underwater = camDist < waterRadius;
         shader.setInt("uUnderwater", underwater ? 1 : 0);
-        float depth = java.lang.Math.max(0f, waterRadius - camDist);
-        float density = 1.0f;
-        shader.setFloat("uUnderwaterDensity", density);
 
         glBindVertexArray(vao);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);

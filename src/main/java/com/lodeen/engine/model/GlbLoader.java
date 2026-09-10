@@ -57,12 +57,16 @@ public class GlbLoader {
         Map<String,Object> acc = accessors.get(accIdx);
         int count = num(acc, "count");
         int compType = num(acc, "componentType");
+        int compSize = (compType == 5125) ? 4 : (compType == 5123) ? 2 : 1;
+        int stride = stride(acc, compSize);
+        if (stride < compSize) stride = compSize;
         ByteBuffer bb = slice(acc);
         int[] out = new int[count];
         for (int i = 0; i < count; i++) {
             if (compType == 5125) out[i] = bb.getInt();
             else if (compType == 5123) out[i] = bb.getShort() & 0xFFFF;
             else if (compType == 5121) out[i] = bb.get() & 0xFF;
+            if (i < count - 1) bb.position(bb.position() + stride - compSize);
         }
         return out;
     }

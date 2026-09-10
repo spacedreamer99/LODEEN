@@ -14,7 +14,12 @@ public class ModelLoader {
         List<GameObject> out = new ArrayList<>();
         List<Map<String,Object>> scenes = (List<Map<String,Object>>) glb.json.get("scenes");
         List<Map<String,Object>> nodes  = (List<Map<String,Object>>) glb.json.get("nodes");
+        if (scenes == null || scenes.isEmpty())
+            throw new RuntimeException("GLB has no scenes: " + path);
+        if (nodes == null)
+            throw new RuntimeException("GLB has no nodes: " + path);
         List<Object> roots = (List<Object>) scenes.get(0).get("nodes");
+        if (roots == null) return out;
         for (Object ri : roots) traverse(glb, ml, nodes, iv(ri), null, out);
         return out;
     }
@@ -48,18 +53,30 @@ public class ModelLoader {
                 go.transform.scale.set(fl(s,0), fl(s,1), fl(s,2));
             }
         }
-        go.transform.markDirty();
         if (parent != null) parent.addChild(go);
         out.add(go);
+
         if (n.containsKey("mesh")) {
             List<Map<String,Object>> meshes = (List<Map<String,Object>>) glb.json.get("meshes");
-            List<Map<String,Object>> prims = (List<Map<String,Object>>) meshes.get(iv(n.get("mesh"))).get("primitives");
-            for (Map<String,Object> prim : prims) {
+            List<Map<String,Object>> prims = (List<Map<String,Object>>)
+                meshes.get(iv(n.get("mesh"))).get("primitives");
+            for (int i = 0; i < prims.size(); i++) {
+                Map<String,Object> prim = prims.get(i);
                 Mesh m = build(glb, prim);
                 m.material = ml.load(prim.containsKey("material") ? iv(prim.get("material")) : -1);
-                go.mesh = m;
+                if (prims.size() == 1) {
+                    go.mesh = m;
+                } else {
+                    // Несколько примитивов — раскидываем по дочерним GameObject
+                    GameObject child = new GameObject();
+                    child.name = go.name + "_prim" + i;
+                    child.mesh = m;
+                    go.addChild(child);
+                    out.add(child);
+                }
             }
         }
+
         if (n.containsKey("children"))
             for (Object c : (List<Object>) n.get("children"))
                 traverse(glb, ml, nodes, iv(c), go, out);

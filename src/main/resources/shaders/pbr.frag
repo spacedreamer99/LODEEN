@@ -43,7 +43,7 @@ void main() {
 
     float alpha = (uAlphaMode == 0) ? 1.0 : baseColor.a;
     if (uAlphaMode == 1 && alpha < uAlphaCutoff) discard;
-    if (alpha < 0.01) discard;
+    if (uAlphaMode != 0 && alpha < 0.01) discard;
 
     float rough = uRoughness;
     float metal = uMetallic;
