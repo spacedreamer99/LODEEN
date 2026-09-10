@@ -57,7 +57,7 @@ public class StarFieldRenderer {
             "        sizeMult = 6.0;\n" +
             "    }\n" +
             "    // Базовый минимальный размер 0.012 (~8px), множитель класса увеличивает его\n" +
-            "    float size = 0.012 * sizeMult;\n" +
+            "    float size = 0.02 * sizeMult;\n" +
             "    // Яркость зависит от размера (имитация светимости)\n" +
             "    float brightness = smoothstep(size, 0.0, d) * (0.5 + size * 8.0);\n" +
             "    // Добавляем яркое ядро для крупных звёзд\n" +
