@@ -1,3 +1,4 @@
+
 plugins { id 'java'; id 'application' }
 group = 'com.lodeen'; version = '0.1.0'
 repositories {
@@ -12,6 +13,7 @@ dependencies {
     implementation "org.lwjgl:lwjgl", "org.lwjgl:lwjgl-glfw", "org.lwjgl:lwjgl-opengl"
     implementation "org.joml:joml:$jomlVersion"
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
+    implementation 'de.javagl:jgltf-model:2.0.4'
 
     def os = System.getProperty('os.name').toLowerCase()
     def natives = os.contains('win') ? 'natives-windows'
