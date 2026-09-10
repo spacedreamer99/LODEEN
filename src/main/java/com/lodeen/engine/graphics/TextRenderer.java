@@ -39,11 +39,12 @@ public class TextRenderer {
         glEnableVertexAttribArray(1);
     }
 
-    public void drawTextCentered(String text, float centerX, float centerY, float scale,
+    // pixelFontSize — высота шрифта в пикселях экрана (1:1)
+    public void drawTextCentered(String text, float centerX, float centerY, int pixelFontSize,
                                  int screenW, int screenH) {
-        FontTexture ft = new FontTexture(text);
-        float quadW = ft.width * scale;
-        float quadH = ft.height * scale;
+        FontTexture ft = new FontTexture(text, pixelFontSize);
+        float quadW = ft.width;
+        float quadH = ft.height;
         float x = centerX - quadW / 2;
         float y = centerY - quadH / 2;
 

@@ -48,7 +48,7 @@ public class MenuUI {
             rectRenderer.draw(startX, y, buttonW, buttonH, width, height, r, g, b, a);
             float centerX = startX + buttonW / 2;
             float centerY = y + buttonH / 2;
-            textRenderer.drawTextCentered(labels[i], centerX, centerY, buttonH * 0.02f, width, height);
+            textRenderer.drawTextCentered(labels[i], centerX, centerY, (int)(buttonH * 0.85f), width, height);
         }
         if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && hovered >= 0) {
             handleClick(hovered);

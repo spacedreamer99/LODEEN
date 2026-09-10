@@ -11,25 +11,30 @@ public class FontTexture {
     public int width;
     public int height;
 
-    public FontTexture(String text) {
-        Font font = loadFont();
+    public FontTexture(String text, int pixelFontSize) {
+        Font font = loadFont().deriveFont((float) pixelFontSize);
         BufferedImage temp = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
         Graphics2D gTemp = temp.createGraphics();
-        gTemp.setFont(font.deriveFont(24f));
+        gTemp.setFont(font);
         FontMetrics fm = gTemp.getFontMetrics();
         int textWidth = fm.stringWidth(text);
         int textHeight = fm.getHeight();
         gTemp.dispose();
 
-        int padding = 4;
-        width = textWidth + padding * 2;
-        height = textHeight + padding * 2;
+        int padX = Math.max(6, pixelFontSize / 3);
+        int padY = Math.max(6, pixelFontSize / 3);
+        width = textWidth + padX * 2;
+        height = textHeight + padY * 2;
+
         BufferedImage img = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = img.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g.setFont(font.deriveFont(24f));
+        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+        g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+        g.setFont(font);
         g.setColor(Color.WHITE);
-        g.drawString(text, padding, fm.getAscent() + padding);
+        g.drawString(text, padX, padY + fm.getAscent());
         g.dispose();
 
         int[] pixels = img.getRGB(0, 0, width, height, null, 0, width);
@@ -54,12 +59,12 @@ public class FontTexture {
         try (InputStream is = getClass().getResourceAsStream("/fonts/Forum-Regular.ttf")) {
             if (is == null) {
                 System.err.println("Forum font not found, using default");
-                return new Font("Serif", Font.PLAIN, 24);
+                return new Font("Serif", Font.PLAIN, 48);
             }
             return Font.createFont(Font.TRUETYPE_FONT, is);
         } catch (Exception e) {
             e.printStackTrace();
-            return new Font("Serif", Font.PLAIN, 24);
+            return new Font("Serif", Font.PLAIN, 48);
         }
     }
 
