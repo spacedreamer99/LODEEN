@@ -20,7 +20,7 @@ public class RemotePlayerRenderer {
         shader.use();
         setMat4("uView", cam.getView());
         setMat4("uProj", cam.getProjection(w, h));
-        for (var p : RemotePlayers.all()) {
+        for (var p : RemotePlayers.sampleAll()) {
             Matrix4f model = new Matrix4f().translate(p.x, p.y, p.z).scale(0.3f);
             setMat4("uModel", model);
             mesh.draw();

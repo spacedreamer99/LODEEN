@@ -24,7 +24,6 @@ public class ServerHandler extends SimpleChannelInboundHandler<String> {
     @Override protected void channelRead0(ChannelHandlerContext ctx, String msg) {
         try {
             Packet packet = PacketCodec.decode(msg);
-            log.debug("Packet: {}", packet.id());
 
             if (packet instanceof HandshakePacket hs) {
                 this.playerName = hs.playerName;
@@ -41,20 +40,10 @@ public class ServerHandler extends SimpleChannelInboundHandler<String> {
                 pu.state.id = playerId;
                 pu.state.name = playerName;
                 PlayerRegistry.update(ctx.channel(), pu.state);
-                broadcastSnapshot();
+                // Рассылку делает тикер LodeenServer — не здесь
             }
         } catch (Exception e) {
             log.error("Failed: {}", e.getMessage());
-        }
-    }
-
-    private void broadcastSnapshot() {
-        try {
-            WorldSnapshotPacket snap = new WorldSnapshotPacket(PlayerRegistry.snapshot());
-            String json = PacketCodec.encode(snap) + "\n";
-            PlayerRegistry.channels().writeAndFlush(json);
-        } catch (Exception e) {
-            log.error("Broadcast failed: {}", e.getMessage());
         }
     }
 
