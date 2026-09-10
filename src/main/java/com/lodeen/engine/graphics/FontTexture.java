@@ -2,6 +2,7 @@ package com.lodeen.engine.graphics;
 
 import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 import static org.lwjgl.opengl.GL30.*;
 
@@ -11,9 +12,10 @@ public class FontTexture {
     public int height;
 
     public FontTexture(String text) {
+        Font font = loadFont();
         BufferedImage temp = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
         Graphics2D gTemp = temp.createGraphics();
-        gTemp.setFont(new Font("Arial", Font.PLAIN, 24));
+        gTemp.setFont(font.deriveFont(24f));
         FontMetrics fm = gTemp.getFontMetrics();
         int textWidth = fm.stringWidth(text);
         int textHeight = fm.getHeight();
@@ -25,7 +27,7 @@ public class FontTexture {
         BufferedImage img = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = img.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g.setFont(new Font("Arial", Font.PLAIN, 24));
+        g.setFont(font.deriveFont(24f));
         g.setColor(Color.WHITE);
         g.drawString(text, padding, fm.getAscent() + padding);
         g.dispose();
@@ -46,6 +48,19 @@ public class FontTexture {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, buf);
+    }
+
+    private Font loadFont() {
+        try (InputStream is = getClass().getResourceAsStream("/fonts/Forum-Regular.ttf")) {
+            if (is == null) {
+                System.err.println("Forum font not found, using default");
+                return new Font("Serif", Font.PLAIN, 24);
+            }
+            return Font.createFont(Font.TRUETYPE_FONT, is);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return new Font("Serif", Font.PLAIN, 24);
+        }
     }
 
     public void cleanup() {
