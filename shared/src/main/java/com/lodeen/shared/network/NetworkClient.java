@@ -34,6 +34,9 @@ public class NetworkClient {
         this.host = host; this.port = port; this.listener = listener;
     }
 
+    private String playerName = "Player";
+    public void setPlayerName(String n) { this.playerName = n; }
+
     public void connect() { new Thread(this::connectBlocking, "network-client").start(); }
 
     private void connectBlocking() {
@@ -55,6 +58,7 @@ public class NetworkClient {
             connected = true;
             log.info("Connected to {}:{}", host, port);
             if (listener != null) listener.onConnected();
+            send(new HandshakePacket("0.2.0", playerName));
             channel.closeFuture().sync();
         } catch (Exception e) {
             log.warn("Connection failed: {}", e.getMessage());

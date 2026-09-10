@@ -27,6 +27,7 @@ public class DebugOverlay {
             ImGui.separator();
             ImGui.text("Server: " + (net.isConnected() ? "Connected" : "Disconnected"));
             ImGui.text("Ping: " + (net.getPingMs() >= 0 ? net.getPingMs() + " ms" : "-"));
+            ImGui.text("MOTD: " + net.getMotd());
         }
         ImGui.end();
     }

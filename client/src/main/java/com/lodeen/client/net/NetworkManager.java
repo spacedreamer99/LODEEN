@@ -1,6 +1,8 @@
 package com.lodeen.client.net;
 
 import com.lodeen.shared.network.NetworkClient;
+import com.lodeen.shared.network.Packet;
+import com.lodeen.shared.network.ServerInfoPacket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -10,13 +12,17 @@ public class NetworkManager {
     private NetworkClient client;
     private volatile boolean connected = false;
     private volatile long pingMs = -1;
+    private volatile String motd = "-";
 
-    public void connect(String host, int port) {
+    public void connect(String host, int port, String playerName) {
         client = new NetworkClient(host, port, new NetworkClient.Listener() {
             @Override public void onConnected()    { connected = true;  log.info("Net: connected"); }
             @Override public void onDisconnected() { connected = false; log.info("Net: disconnected"); }
-            @Override public void onPacket(com.lodeen.shared.network.Packet p) { /* TODO */ }
+            @Override public void onPacket(Packet p) {
+                if (p instanceof ServerInfoPacket info) motd = info.motd;
+            }
         });
+        client.setPlayerName(playerName);
         client.connect();
     }
 
@@ -30,4 +36,5 @@ public class NetworkManager {
 
     public boolean isConnected() { return connected; }
     public long getPingMs()      { return pingMs; }
+    public String getMotd()      { return motd; }
 }

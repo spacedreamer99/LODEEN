@@ -36,7 +36,7 @@ public class Window {
         overlay = new DebugOverlay();
 
         net = new NetworkManager();
-        net.connect("localhost", 25565);
+        net.connect("localhost", 25565, "Player");
     }
 
     public void loop() {
