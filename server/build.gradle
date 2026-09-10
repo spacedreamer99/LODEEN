@@ -1,0 +1,21 @@
+plugins {
+    id 'application'
+}
+
+dependencies {
+    implementation project(':shared')
+
+    implementation "info.picocli:picocli:$picocliVersion"
+    annotationProcessor "info.picocli:picocli-codegen:$picocliVersion"
+
+    implementation "com.zaxxer:HikariCP:$hikariVersion"
+    implementation "org.xerial:sqlite-jdbc:$sqliteVersion"
+    implementation "org.flywaydb:flyway-core:$flywayVersion"
+
+    implementation "io.micrometer:micrometer-core:$micrometerVersion"
+    implementation "io.micrometer:micrometer-registry-prometheus:$micrometerVersion"
+}
+
+application {
+    mainClass = 'com.lodeen.server.ServerMain'
+}

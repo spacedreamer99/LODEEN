@@ -1,6 +1,8 @@
 package com.lodeen.engine.ui;
 
 import com.lodeen.engine.graphics.StarFieldRenderer;
+import com.lodeen.game.SettingsManager;
+import com.lodeen.game.SettingsUI;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import imgui.ImGui;
@@ -63,7 +65,7 @@ public class MenuUI {
         ImGui.setCursorPosX(offsetX);
         if (ImGui.button("Encyclopedia", btnW, btnH)) log.info("Encyclopedia clicked (TODO)");
         ImGui.setCursorPosX(offsetX);
-        if (ImGui.button("Settings", btnW, btnH)) log.info("Settings clicked (TODO)");
+        if (ImGui.button("Settings", btnW, btnH)) SettingsManager.openSettings();
         ImGui.setCursorPosX(offsetX);
         if (ImGui.button("Exit", btnW, btnH)) glfwSetWindowShouldClose(window, true);
 

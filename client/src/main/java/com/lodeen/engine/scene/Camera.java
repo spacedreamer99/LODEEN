@@ -1,5 +1,6 @@
 package com.lodeen.engine.scene;
 
+import com.lodeen.game.SettingsManager;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -7,10 +8,23 @@ import org.joml.Vector3f;
 public class Camera {
     private final Vector3f position = new Vector3f(0, 0, 3);
     private final Quaternionf rotation = new Quaternionf();
-    private float fov = 50f, near = 0.01f, far = 2000f;
-    private float linearSpeed = 3f;
-    private float angularSpeed = 70f;
+    private float fov, near, far;
+    private float linearSpeed;
+    private float angularSpeed;
     private float throttle = 1f;
+
+    public Camera() {
+        applySettings();
+    }
+
+    public void applySettings() {
+        var s = SettingsManager.get();
+        this.fov = s.fov;
+        this.near = s.near;
+        this.far = s.far;
+        this.linearSpeed = s.linearSpeed;
+        this.angularSpeed = s.angularSpeed;
+    }
 
     public Matrix4f getView() {
         Quaternionf inv = new Quaternionf(rotation).conjugate();

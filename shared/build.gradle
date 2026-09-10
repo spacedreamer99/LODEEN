@@ -1,0 +1,6 @@
+dependencies {
+    api "com.fasterxml.jackson.core:jackson-databind:$jacksonVersion"
+    api "com.google.guava:guava:$guavaVersion"
+    api "io.netty:netty-all:$nettyVersion"
+    api "org.bouncycastle:bcprov-jdk18on:$bcVersion"
+}

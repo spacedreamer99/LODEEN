@@ -3,6 +3,8 @@ package com.lodeen.engine.core;
 import com.lodeen.engine.scene.Scene;
 import com.lodeen.engine.ui.ImGuiLayer;
 import com.lodeen.engine.ui.MenuUI;
+import com.lodeen.game.SettingsManager;
+import com.lodeen.game.SettingsUI;
 import imgui.ImGui;
 import imgui.flag.ImGuiCond;
 import org.lwjgl.glfw.GLFWErrorCallback;
@@ -91,6 +93,7 @@ public class Window {
                 menuUI.renderWidgets();
             }
             if (debugVisible) renderDebugOverlay();
+            if (SettingsManager.isSettingsVisible()) SettingsUI.render(width, height);
             imgui.endFrame();
 
             glfwSwapBuffers(handle);

@@ -1,5 +1,6 @@
 package com.lodeen.engine.scene;
 
+import com.lodeen.game.SettingsManager;
 import static org.lwjgl.glfw.GLFW.*;
 
 public class InputController {
@@ -7,10 +8,11 @@ public class InputController {
     private final Camera camera;
     private double lastMX, lastMY;
     private boolean firstMouse = true;
-    private float sensitivity = 0.12f;
+    private float sensitivity;
     private boolean exitRequested = false;
 
     public InputController(long window, Camera camera) {
+        this.sensitivity = SettingsManager.get().mouseSensitivity;
         this.window = window;
         this.camera = camera;
         captureMouse(true);

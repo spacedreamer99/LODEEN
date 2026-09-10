@@ -1,5 +1,6 @@
 package com.lodeen.engine.scene;
 
+import com.lodeen.game.SettingsManager;
 import com.lodeen.engine.graphics.Renderer3D;
 import com.lodeen.engine.graphics.SkyboxRenderer;
 import com.lodeen.engine.graphics.Texture;
@@ -22,6 +23,7 @@ public class Scene {
     private boolean exitRequested = false;
 
     public void init(long window) {
+        SettingsManager.load();
         camera = new Camera();
         renderer = new Renderer3D();
         skybox = new SkyboxRenderer();
