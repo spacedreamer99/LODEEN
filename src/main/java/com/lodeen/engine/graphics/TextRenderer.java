@@ -1,10 +1,13 @@
 package com.lodeen.engine.graphics;
 
+import java.util.HashMap;
+import java.util.Map;
 import static org.lwjgl.opengl.GL30.*;
 
 public class TextRenderer {
     private ShaderProgram shader;
     private int vao, vbo;
+    private final Map<String, FontTexture> cache = new HashMap<>();
 
     public TextRenderer() {
         shader = new ShaderProgram(
@@ -39,10 +42,11 @@ public class TextRenderer {
         glEnableVertexAttribArray(1);
     }
 
-    // pixelFontSize — высота шрифта в пикселях экрана (1:1)
     public void drawTextCentered(String text, float centerX, float centerY, int pixelFontSize,
                                  int screenW, int screenH) {
-        FontTexture ft = new FontTexture(text, pixelFontSize);
+        String key = pixelFontSize + "|" + text;
+        FontTexture ft = cache.computeIfAbsent(key, k -> new FontTexture(text, pixelFontSize));
+
         float quadW = ft.width;
         float quadH = ft.height;
         float x = centerX - quadW / 2;
@@ -54,17 +58,18 @@ public class TextRenderer {
         float ndcH = (quadH / screenH) * 2;
 
         shader.use();
-        glUniform2f(glGetUniformLocation(shader.getId(), "uPos"), ndcX, ndcY - ndcH);
-        glUniform2f(glGetUniformLocation(shader.getId(), "uScale"), ndcW, ndcH);
+        shader.setInt("uTex", 0);
+        glUniform2f(shader.getUniformLocation("uPos"),   ndcX, ndcY - ndcH);
+        glUniform2f(shader.getUniformLocation("uScale"), ndcW, ndcH);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, ft.id);
-        shader.setInt("uTex", 0);
         glBindVertexArray(vao);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        ft.cleanup();
     }
 
     public void cleanup() {
+        for (FontTexture ft : cache.values()) ft.cleanup();
+        cache.clear();
         glDeleteBuffers(vbo);
         glDeleteVertexArrays(vao);
         shader.cleanup();

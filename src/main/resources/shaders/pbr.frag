@@ -84,5 +84,5 @@ void main() {
         alpha *= dayFactor;
     }
 
-    FragColor = vec4(color, alpha);
+    FragColor = vec4(pow(color, vec3(1.0/2.2)), alpha);
 }

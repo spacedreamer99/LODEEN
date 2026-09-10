@@ -2,10 +2,13 @@ package com.lodeen.engine.graphics;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
 import static org.lwjgl.opengl.GL30.*;
 
 public class ShaderProgram {
     private int id;
+    private final Map<String, Integer> uniformCache = new HashMap<>();
 
     public ShaderProgram(String v, String f) {
         int vs = compile(GL_VERTEX_SHADER, resolve(v));
@@ -46,9 +49,19 @@ public class ShaderProgram {
 
     public void use() { glUseProgram(id); }
     public int getId() { return id; }
-    public void setInt(String n, int v) { glUniform1i(glGetUniformLocation(id, n), v); }
-    public void setFloat(String n, float v) { glUniform1f(glGetUniformLocation(id, n), v); }
-    public void cleanup() { glDeleteProgram(id); }
+
+    /** Кешированный glGetUniformLocation — безопасно звать каждый кадр. */
+    public int getUniformLocation(String name) {
+        return uniformCache.computeIfAbsent(name, n -> glGetUniformLocation(id, n));
+    }
+
+    public void setInt(String n, int v)     { glUniform1i(getUniformLocation(n), v); }
+    public void setFloat(String n, float v) { glUniform1f(getUniformLocation(n), v); }
+
+    public void cleanup() {
+        glDeleteProgram(id);
+        uniformCache.clear();
+    }
 
     private int compile(int type, String src) {
         int s = glCreateShader(type);
