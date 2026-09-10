@@ -12,7 +12,8 @@ public class ServerHandler extends SimpleChannelInboundHandler<String> {
     private static final Logger log = LoggerFactory.getLogger(ServerHandler.class);
 
     private String playerName = "unknown";
-    private String playerId;
+    private String sessionId;   // уникален для каждого подключения
+    private String dbId;         // постоянный ID в БД
     private long connectedAt;
 
     @Override public void channelActive(ChannelHandlerContext ctx) {
@@ -22,9 +23,9 @@ public class ServerHandler extends SimpleChannelInboundHandler<String> {
 
     @Override public void channelInactive(ChannelHandlerContext ctx) {
         PlayerRegistry.remove(ctx.channel());
-        if (playerId != null) {
+        if (dbId != null) {
             long sessionSec = (System.currentTimeMillis() - connectedAt) / 1000L;
-            PlayerDao.updateLastSeen(playerId, sessionSec);
+            PlayerDao.updateLastSeen(dbId, sessionSec);
         }
         log.info("Client disconnected: {} (player: {})", ctx.channel().remoteAddress(), playerName);
     }
@@ -36,24 +37,26 @@ public class ServerHandler extends SimpleChannelInboundHandler<String> {
             if (packet instanceof HandshakePacket hs) {
                 this.playerName = hs.playerName;
                 PlayerRecord rec = PlayerDao.findOrCreate(playerName);
-                if (rec == null) {
-                    log.warn("DB registration failed for {}", playerName);
-                    this.playerId = ctx.channel().id().asShortText();
-                } else {
-                    this.playerId = rec.id();
-                    log.info("Player {} authenticated (db_id={}, playtime={}s)",
-                        playerName, playerId, rec.playtimeSec());
-                }
-                PlayerState st = new PlayerState(playerId, playerName, 0, 0, 3, 0, 0);
+                this.dbId = (rec != null) ? rec.id() : "unknown";
+                this.sessionId = dbId + ":" + ctx.channel().id().asShortText();
+
+                log.info("Player {} authenticated (db_id={}, session={})",
+                    playerName, dbId, sessionId);
+
+                float angle = (float) (Math.random() * Math.PI * 2);
+                float radius = 3.5f;
+                float sx = (float) Math.cos(angle) * radius;
+                float sz = (float) Math.sin(angle) * radius;
+                PlayerState st = new PlayerState(sessionId, playerName, sx, 0, sz, 0, 0);
                 PlayerRegistry.add(ctx.channel(), st);
 
                 ServerInfoPacket info = new ServerInfoPacket("0.2.0", "LODEEN dev server",
-                        PlayerRegistry.snapshot().size(), playerId);
+                        PlayerRegistry.snapshot().size(), sessionId);
                 ctx.writeAndFlush(PacketCodec.encode(info) + "\n");
             } else if (packet instanceof PingPacket ping) {
                 ctx.writeAndFlush(PacketCodec.encode(new PongPacket(ping.timestamp)) + "\n");
             } else if (packet instanceof PlayerUpdatePacket pu) {
-                pu.state.id = playerId;
+                pu.state.id = sessionId;
                 pu.state.name = playerName;
                 PlayerRegistry.update(ctx.channel(), pu.state);
             }
