@@ -1,5 +1,7 @@
 package com.lodeen.server.net;
 
+import com.lodeen.server.db.PlayerDao;
+import com.lodeen.server.db.PlayerRecord;
 import com.lodeen.shared.network.*;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
@@ -11,13 +13,19 @@ public class ServerHandler extends SimpleChannelInboundHandler<String> {
 
     private String playerName = "unknown";
     private String playerId;
+    private long connectedAt;
 
     @Override public void channelActive(ChannelHandlerContext ctx) {
+        connectedAt = System.currentTimeMillis();
         log.info("Client connected: {}", ctx.channel().remoteAddress());
     }
 
     @Override public void channelInactive(ChannelHandlerContext ctx) {
         PlayerRegistry.remove(ctx.channel());
+        if (playerId != null) {
+            long sessionSec = (System.currentTimeMillis() - connectedAt) / 1000L;
+            PlayerDao.updateLastSeen(playerId, sessionSec);
+        }
         log.info("Client disconnected: {} (player: {})", ctx.channel().remoteAddress(), playerName);
     }
 
@@ -27,10 +35,18 @@ public class ServerHandler extends SimpleChannelInboundHandler<String> {
 
             if (packet instanceof HandshakePacket hs) {
                 this.playerName = hs.playerName;
-                this.playerId = ctx.channel().id().asShortText();
+                PlayerRecord rec = PlayerDao.findOrCreate(playerName);
+                if (rec == null) {
+                    log.warn("DB registration failed for {}", playerName);
+                    this.playerId = ctx.channel().id().asShortText();
+                } else {
+                    this.playerId = rec.id();
+                    log.info("Player {} authenticated (db_id={}, playtime={}s)",
+                        playerName, playerId, rec.playtimeSec());
+                }
                 PlayerState st = new PlayerState(playerId, playerName, 0, 0, 3, 0, 0);
                 PlayerRegistry.add(ctx.channel(), st);
-                log.info("Handshake: player={} id={}", playerName, playerId);
+
                 ServerInfoPacket info = new ServerInfoPacket("0.2.0", "LODEEN dev server",
                         PlayerRegistry.snapshot().size(), playerId);
                 ctx.writeAndFlush(PacketCodec.encode(info) + "\n");
@@ -40,7 +56,6 @@ public class ServerHandler extends SimpleChannelInboundHandler<String> {
                 pu.state.id = playerId;
                 pu.state.name = playerName;
                 PlayerRegistry.update(ctx.channel(), pu.state);
-                // Рассылку делает тикер LodeenServer — не здесь
             }
         } catch (Exception e) {
             log.error("Failed: {}", e.getMessage());
