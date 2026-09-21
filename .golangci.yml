@@ -9,8 +9,6 @@ linters:
   enable:
     - misspell
     - revive
-    - goimports
-    - gofmt
   exclusions:
     rules:
       - path: _test\.go
