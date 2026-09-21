@@ -22,6 +22,10 @@ build-client:
 test:
 	$(GO) test -race -cover ./...
 
+.PHONY: dev
+dev:
+	-./scripts/dev.sh
+
 .PHONY: clean
 clean:
-	rm -rf $(BIN_DIR)
+	rm -rf $(BIN_DIR) tmp

@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	readTimeout  = 60 * time.Second
+	readTimeout  = 300 * time.Second
 	writeTimeout = 5 * time.Second
 	sendBufSize  = 256
 )
@@ -234,6 +234,7 @@ func (s *Server) readLoop(c *Client) {
 		_ = c.conn.SetReadDeadline(time.Now().Add(readTimeout))
 		env, err := readEnvelope(c.conn)
 		if err != nil {
+			c.log.Info("read loop ended", "err", err.Error())
 			return
 		}
 		s.handleMessage(c, env)

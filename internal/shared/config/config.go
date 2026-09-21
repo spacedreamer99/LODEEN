@@ -39,6 +39,7 @@ type RedisConfig struct {
 type ClientConfig struct {
 	PlanetModel string
 	StartAddr   string
+	Nick        string
 }
 
 func Load() (*Config, error) {
@@ -63,6 +64,7 @@ func Load() (*Config, error) {
 		Client: ClientConfig{
 			PlanetModel: getEnv("LODEEN_CLIENT_PLANET_MODEL", "assets/models/planet.glb"),
 			StartAddr:   getEnv("LODEEN_CLIENT_START_ADDR", "127.0.0.1:7777"),
+			Nick:        getEnv("LODEEN_CLIENT_NICK", "pilot"),
 		},
 	}
 	if err := cfg.validate(); err != nil {

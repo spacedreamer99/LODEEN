@@ -19,6 +19,16 @@ const (
 	StatusConnected
 )
 
+const (
+	interpolationDelay = 75 * time.Millisecond
+	maxHistoryStates   = 20
+)
+
+type timedState struct {
+	state protocol.PlayerState
+	at    time.Time
+}
+
 type Client struct {
 	log *slog.Logger
 
@@ -30,12 +40,14 @@ type Client struct {
 	rtt      time.Duration
 
 	playersMu sync.RWMutex
-	players   map[string]protocol.PlayerState
+	players   map[string][]timedState
 
 	chatCh chan protocol.ChatMessage
 
 	stateMu   sync.Mutex
 	lastState protocol.PlayerState
+
+	writeMu sync.Mutex
 
 	done chan struct{}
 	wg   sync.WaitGroup
@@ -44,7 +56,7 @@ type Client struct {
 func New(log *slog.Logger) *Client {
 	return &Client{
 		log:     log,
-		players: make(map[string]protocol.PlayerState),
+		players: make(map[string][]timedState),
 		chatCh:  make(chan protocol.ChatMessage, 128),
 	}
 }
@@ -71,7 +83,7 @@ func (c *Client) Chat() <-chan protocol.ChatMessage { return c.chatCh }
 
 func (c *Client) Connect(addr, nick string) (*protocol.Welcome, error) {
 	c.mu.Lock()
-	if c.status == StatusConnected {
+	if c.status == StatusConnected || c.status == StatusConnecting {
 		c.mu.Unlock()
 		return nil, errors.New("already connected")
 	}
@@ -97,8 +109,11 @@ func (c *Client) Connect(addr, nick string) (*protocol.Welcome, error) {
 		_ = conn.Close()
 		return nil, err
 	}
+	c.writeMu.Lock()
 	_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	if err := protocol.WriteFrame(conn, raw); err != nil {
+	err = protocol.WriteFrame(conn, raw)
+	c.writeMu.Unlock()
+	if err != nil {
 		_ = conn.Close()
 		return nil, err
 	}
@@ -158,6 +173,10 @@ func (c *Client) Disconnect() {
 		}
 	}
 	c.wg.Wait()
+
+	c.playersMu.Lock()
+	c.players = make(map[string][]timedState)
+	c.playersMu.Unlock()
 }
 
 func (c *Client) SetState(st protocol.PlayerState) {
@@ -190,12 +209,61 @@ func (c *Client) SendChat(text string) error {
 	return c.send(protocol.TypeChat, protocol.ChatMessage{Text: text})
 }
 
-func (c *Client) Snapshot() []protocol.PlayerState {
+func (c *Client) InterpolatedSnapshot() []protocol.PlayerState {
+	renderTime := time.Now().Add(-interpolationDelay)
+
 	c.playersMu.RLock()
 	defer c.playersMu.RUnlock()
+
 	out := make([]protocol.PlayerState, 0, len(c.players))
-	for _, p := range c.players {
-		out = append(out, p)
+	for _, hist := range c.players {
+		if len(hist) == 0 {
+			continue
+		}
+		if len(hist) == 1 {
+			out = append(out, hist[0].state)
+			continue
+		}
+
+		var a, b *timedState
+		for i := len(hist) - 1; i >= 0; i-- {
+			if !hist[i].at.After(renderTime) {
+				a = &hist[i]
+				if i+1 < len(hist) {
+					b = &hist[i+1]
+				}
+				break
+			}
+		}
+		if a == nil {
+			out = append(out, hist[0].state)
+			continue
+		}
+		if b == nil {
+			out = append(out, a.state)
+			continue
+		}
+		span := b.at.Sub(a.at).Seconds()
+		if span <= 0 {
+			out = append(out, a.state)
+			continue
+		}
+		t := renderTime.Sub(a.at).Seconds() / span
+		if t < 0 {
+			t = 0
+		} else if t > 1 {
+			t = 1
+		}
+		interp := protocol.PlayerState{
+			ID:    a.state.ID,
+			Nick:  a.state.Nick,
+			X:     a.state.X + (b.state.X-a.state.X)*float32(t),
+			Y:     a.state.Y + (b.state.Y-a.state.Y)*float32(t),
+			Z:     a.state.Z + (b.state.Z-a.state.Z)*float32(t),
+			Yaw:   a.state.Yaw,
+			Pitch: a.state.Pitch,
+		}
+		out = append(out, interp)
 	}
 	return out
 }
@@ -215,6 +283,8 @@ func (c *Client) send(t protocol.Type, data any) error {
 	if err != nil {
 		return err
 	}
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	_ = conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
 	return protocol.WriteFrame(conn, raw)
 }
@@ -228,6 +298,11 @@ func (c *Client) readLoop() {
 			c.mu.Lock()
 			c.status = StatusDisconnected
 			c.mu.Unlock()
+			select {
+			case <-c.done:
+			default:
+				close(c.done)
+			}
 			return
 		}
 		var env protocol.Envelope
@@ -243,10 +318,22 @@ func (c *Client) handle(env protocol.Envelope) {
 	case protocol.TypeSnapshot:
 		var s protocol.Snapshot
 		_ = env.Decode(&s)
+		now := time.Now()
 		c.playersMu.Lock()
-		c.players = make(map[string]protocol.PlayerState, len(s.Players))
+		seen := make(map[string]struct{}, len(s.Players))
 		for _, p := range s.Players {
-			c.players[p.ID] = p
+			seen[p.ID] = struct{}{}
+			hist := c.players[p.ID]
+			hist = append(hist, timedState{state: p, at: now})
+			if len(hist) > maxHistoryStates {
+				hist = hist[len(hist)-maxHistoryStates:]
+			}
+			c.players[p.ID] = hist
+		}
+		for id := range c.players {
+			if _, ok := seen[id]; !ok {
+				delete(c.players, id)
+			}
 		}
 		c.playersMu.Unlock()
 	case protocol.TypeChat:

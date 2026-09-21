@@ -49,7 +49,7 @@ func New(cfg *config.Config, log *slog.Logger) *App {
 		cfg:      cfg,
 		log:      log,
 		mode:     state.ModeMenu,
-		menuNick: "pilot",
+		menuNick: cfg.Client.Nick,
 		menuAddr: cfg.Client.StartAddr,
 	}
 }
@@ -189,7 +189,7 @@ func (a *App) updatePlaying(dt float32) {
 	}
 
 	fw := a.flight.Forward()
-	a.camera.Position = a.flight.Pos
+	a.camera.Position = rl.Vector3Add(a.flight.Pos, rl.Vector3Scale(fw, 3.0))
 	a.camera.Target = rl.Vector3Add(a.flight.Pos, fw)
 	a.camera.Up = a.flight.CameraUp()
 
@@ -219,9 +219,8 @@ func (a *App) draw() {
 		rl.ClearBackground(rl.NewColor(4, 4, 12, 255))
 		rl.BeginMode3D(a.camera)
 		a.scene.Draw()
+		render.DrawPlayers(a.nc.InterpolatedSnapshot(), a.nc.PlayerID(), a.camera)
 		rl.EndMode3D()
-
-		render.DrawPlayers(a.nc.Snapshot(), a.nc.PlayerID(), a.camera)
 
 		a.drawHUD()
 		if a.mode == state.ModePaused {
@@ -314,6 +313,8 @@ func (a *App) drawHUD() {
 
 	rtt := a.nc.RTT().Milliseconds()
 	fonts.Draw(fmt.Sprintf("RTT: %d ms", rtt), screenW-160, 10, 18, rl.RayWhite)
+	players := len(a.nc.InterpolatedSnapshot())
+	fonts.Draw(fmt.Sprintf("Players: %d", players), screenW-160, 30, 18, rl.RayWhite)
 
 	help := "WASD - move - Space up - Shift down - Q/E roll - Ctrl boost - T chat - Esc pause"
 	fonts.Draw(help, 10, screenH-52, 16, rl.Gray)
@@ -349,6 +350,7 @@ func (a *App) startConnect() {
 	a.log.Info("spawn", "x", spawn.X, "z", spawn.Z)
 
 	a.flight = input.New(spawn)
+	a.flight.Yaw = render.SpawnYawFromID(welcome.PlayerID)
 	a.nc.StartStateLoop()
 	a.mode = state.ModePlaying
 }
