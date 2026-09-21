@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lodeen-server
+  namespace: lodeen
+  labels:
+    app: lodeen-server
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: lodeen-server
+  template:
+    metadata:
+      labels:
+        app: lodeen-server
+    spec:
+      containers:
+        - name: server
+          image: ghcr.io/spacedreamer99/lodeen-server:main
+          imagePullPolicy: Always
+          env:
+            - name: LODEEN_ENV
+              value: k3d
+            - name: LODEEN_LOG_LEVEL
+              value: info
+            - name: LODEEN_SERVER_TCP_ADDR
+              value: ":7777"
+            - name: LODEEN_SERVER_ADMIN_ADDR
+              value: ":9091"
+            - name: LODEEN_SERVER_TICK_RATE
+              value: "20"
+          ports:
+            - name: tcp-game
+              containerPort: 7777
+            - name: admin
+              containerPort: 9091
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: admin
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
