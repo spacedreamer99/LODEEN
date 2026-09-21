@@ -1,6 +1,7 @@
 MODULE      := github.com/spacedreamer99/lodeen
 BIN_DIR     := bin
 GO          := go
+IMAGE       ?= lodeen-server:dev
 
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT      ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -26,6 +27,38 @@ test:
 dev:
 	-./scripts/dev.sh
 
+.PHONY: docker-build
+docker-build:
+	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) -t $(IMAGE) -f Dockerfile .
+
+.PHONY: docker-run
+docker-run:
+	docker run --rm -p 7777:7777 -p 9091:9091 $(IMAGE)
+
+.PHONY: docker-size
+docker-size:
+	docker images $(IMAGE)
+
 .PHONY: clean
 clean:
 	rm -rf $(BIN_DIR) tmp
+
+.PHONY: compose-up
+compose-up:
+	docker compose up -d --build
+
+.PHONY: compose-down
+compose-down:
+	docker compose down
+
+.PHONY: compose-logs
+compose-logs:
+	docker compose logs -f --tail=50
+
+.PHONY: compose-ps
+compose-ps:
+	docker compose ps
+
+.PHONY: compose-clean
+compose-clean:
+	docker compose down -v

@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: lodeen-postgres
+    environment:
+      POSTGRES_USER: lodeen
+      POSTGRES_PASSWORD: lodeen
+      POSTGRES_DB: lodeen
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lodeen -d lodeen"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: lodeen-redis
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+        COMMIT: ${COMMIT:-none}
+        DATE: ${DATE:-unknown}
+    image: lodeen-server:dev
+    container_name: lodeen-server
+    environment:
+      LODEEN_ENV: docker
+      LODEEN_LOG_LEVEL: info
+      LODEEN_SERVER_TCP_ADDR: ":7777"
+      LODEEN_SERVER_ADMIN_ADDR: ":9091"
+      LODEEN_SERVER_TICK_RATE: "20"
+      LODEEN_POSTGRES_DSN: "postgres://lodeen:lodeen@postgres:5432/lodeen?sslmode=disable"
+      LODEEN_REDIS_ADDR: "redis:6379"
+    ports:
+      - "7777:7777"
+      - "9091:9091"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
