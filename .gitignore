@@ -1,0 +1,44 @@
+# Binaries
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test & coverage
+*.test
+*.out
+coverage.html
+
+# Go
+vendor/
+go.work
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/
+
+# Secrets (НЕ КОММИТИТЬ!)
+*.key
+*.pem
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Local data
+data/
+tmp/

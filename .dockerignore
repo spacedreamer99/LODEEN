@@ -1,0 +1,12 @@
+.git
+.github
+.gitignore
+*.md
+docs/
+scripts/
+bin/
+dist/
+build/
+*.log
+.env
+.env.*
