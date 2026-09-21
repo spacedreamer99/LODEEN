@@ -2,6 +2,8 @@ package ui
 
 import (
 	rl "github.com/gen2brain/raylib-go/raylib"
+
+	"github.com/spacedreamer99/lodeen/internal/client/fonts"
 )
 
 type Button struct {
@@ -25,10 +27,10 @@ func (b Button) Draw() {
 	rl.DrawRectangleRec(b.Rect, fill)
 	rl.DrawRectangleLinesEx(b.Rect, 1, rl.NewColor(120, 120, 140, 255))
 
-	tw := rl.MeasureText(b.Text, 20)
+	tw := fonts.Measure(b.Text, 20)
 	tx := int32(b.Rect.X) + (int32(b.Rect.Width)-tw)/2
 	ty := int32(b.Rect.Y) + (int32(b.Rect.Height)-20)/2
-	rl.DrawText(b.Text, tx, ty, 20, rl.White)
+	fonts.Draw(b.Text, tx, ty, 20, rl.White)
 }
 
 func TextField(rect rl.Rectangle, value string, focused bool) bool {
@@ -44,7 +46,7 @@ func TextField(rect rl.Rectangle, value string, focused bool) bool {
 	if focused {
 		label += "_"
 	}
-	rl.DrawText(label, int32(rect.X)+8, int32(rect.Y)+6, 20, rl.White)
+	fonts.Draw(label, int32(rect.X)+8, int32(rect.Y)+6, 20, rl.White)
 	return rl.CheckCollisionPointRec(rl.GetMousePosition(), rect) &&
 		rl.IsMouseButtonPressed(rl.MouseLeftButton)
 }

@@ -3,13 +3,14 @@ package chat
 import (
 	rl "github.com/gen2brain/raylib-go/raylib"
 
+	"github.com/spacedreamer99/lodeen/internal/client/fonts"
 	"github.com/spacedreamer99/lodeen/internal/shared/protocol"
 )
 
 const (
 	maxLines = 8
 	maxInput = 200
-	lineH    = 20
+	lineH    = 22
 )
 
 type Chat struct {
@@ -71,13 +72,13 @@ func (c *Chat) Draw(screenW, screenH int) {
 	for i, m := range c.Lines {
 		text := m.From + ": " + m.Text
 		y := baseY - int32(len(c.Lines)-1-i)*lineH - lineH
-		rl.DrawText(text, pad, y, 18, rl.RayWhite)
+		fonts.Draw(text, pad, y, 18, rl.RayWhite)
 	}
 
 	if c.Open {
 		rect := rl.NewRectangle(pad-2, float32(baseY-2), float32(screenW-2*pad+4), lineH)
 		rl.DrawRectangleRec(rect, rl.Fade(rl.Black, 0.6))
 		rl.DrawRectangleLinesEx(rect, 1, rl.Gray)
-		rl.DrawText("> "+c.Input+"_", pad, baseY, 18, rl.White)
+		fonts.Draw("> "+c.Input+"_", pad, baseY, 18, rl.White)
 	}
 }

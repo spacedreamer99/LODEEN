@@ -48,11 +48,8 @@ func (f *FlightController) Update(dt float32, mouseDelta rl.Vector2) {
 	up := rl.Vector3CrossProduct(rt, fw)
 
 	speed := f.Speed
-	if rl.IsKeyDown(rl.KeyLeftShift) {
+	if rl.IsKeyDown(rl.KeyLeftControl) || rl.IsKeyDown(rl.KeyRightControl) {
 		speed *= 4
-	}
-	if rl.IsKeyDown(rl.KeyLeftControl) {
-		speed *= 0.25
 	}
 
 	move := rl.Vector3Zero()
@@ -71,7 +68,7 @@ func (f *FlightController) Update(dt float32, mouseDelta rl.Vector2) {
 	if rl.IsKeyDown(rl.KeySpace) {
 		move = rl.Vector3Add(move, up)
 	}
-	if rl.IsKeyDown(rl.KeyLeftAlt) {
+	if rl.IsKeyDown(rl.KeyLeftShift) || rl.IsKeyDown(rl.KeyRightShift) {
 		move = rl.Vector3Subtract(move, up)
 	}
 
