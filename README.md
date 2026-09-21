@@ -4,24 +4,26 @@
 
 PvE-фокус. Open Source (Apache 2.0). Chain of Trust. Opt-in discovery.
 
+![CI](https://github.com/spacedreamer99/LODEEN/actions/workflows/ci.yml/badge.svg)
+
 ## Концепция
 
 Платформа состоит из **двух компонентов**:
 
 - **Launcher** (десктоп) — библиотека клиентов, автообновление, разрешение зависимостей, каталог миров.
-- **Repository** (облако) — инстанс: серверы-миры, верификация, репутация, federation.
+- **Server** (облако) — инстанс: каталог миров, верификация, репутация, federation.
 
 Всё остальное инкапсулировано внутри этих двух:
 
-- Игровой сервер (TCP, 20 Гц) — живёт внутри Repository.
-- Клиент (3D) — управляется Launcher'ом; игрок его не видит.
-- CLI — интерфейс управления Repository; работает и на сервере, и на десктопе.
+- **World** (игровой мир) — TCP, 20 Гц, живёт внутри Server.
+- **Client** (3D-клиент) — управляется Launcher'ом; игрок его не видит.
+- **CLI** — интерфейс управления Server; работает и на сервере, и на десктопе.
 
-Множество независимых Repository синхронизируются через **Chain of Trust** — ручную верификацию без автоматического наследования.
+Множество независимых Server синхронизируются через **Chain of Trust** — ручную верификацию без автоматического наследования.
 
 ## Что видит игрок
 
-**Только серверы.** Не клиенты, не зависимости, не версии.
+**Только миры.** Не клиенты, не зависимости, не версии.
 
     ┌─────────────────────────────────────┐
     │  Survival EU    4.7    42/64        │
@@ -31,11 +33,11 @@ PvE-фокус. Open Source (Apache 2.0). Chain of Trust. Opt-in discovery.
 
 Launcher сам решает: какой клиент скачать, какие зависимости поставить, что обновить.
 
-## Что видит владелец Repository
+## Что видит владелец Server
 
 **Свои миры, свои правила, свою модерацию.** Но в единой экосистеме.
 
-- Несколько серверов-миров на одном Repository.
+- Несколько миров на одном Server.
 - Свои верификации (кого принимать в федерацию).
 - Своя команда модерации.
 - Свой домен, свой бренд.
@@ -46,13 +48,13 @@ Launcher сам решает: какой клиент скачать, какие
 |---|---|
 | Язык | Go 1.22+ |
 | 3D-клиент | raylib-go |
-| Server | Go + net (TCP) |
-| Repository | Go + net/http |
+| World | Go + net (TCP) |
+| Server | Go + net/http |
 | БД | PostgreSQL + Redis |
 | Хранилище | Yandex Object Storage (S3) |
 | Крипто | Ed25519 + X25519 + AES-GCM |
 | Контейнеры | Docker multi-stage — scratch |
-| Оркестрация | k3s |
+| Оркестрация | k3d / k3s |
 | IaC | Ansible + Terraform |
 | CI/CD | GitHub Actions |
 | Мониторинг | Prometheus + Grafana + Loki |
@@ -85,36 +87,46 @@ Chain of Trust: каждый link — отдельный акт верифика
 **Жанр — PvE.**
 Осознанный выбор: меньше читеров, меньше токсичности, проще модерация, спокойная аудитория.
 
+**Один процесс — один мир.**
+Каждый мир — отдельный stateful-процесс с собственным состоянием. Никакого шардинга внутри мира: детерминизм важнее масштаба. Масштабирование — горизонтально по мирам.
+
 ## Структура
 
     cmd/
       launcher/     — Launcher (десктоп)
-      repository/   — Repository (облако)
-      server/       — игровой сервер (внутри Repository)
+      server/       — Server (облако)
+      world/        — игровой мир (внутри Server)
       client/       — 3D-клиент (управляется Launcher'ом)
       cli/          — CLI (сервер + десктоп)
 
     internal/
       launcher/     — логика Launcher (clients, updater, deps)
-      repository/   — логика Repository (servers, trust, reputation)
-      server/       — логика игрового сервера
+      server/       — логика Server (worlds, trust, reputation)
+      world/        — логика игрового мира
       client/       — логика клиента
       cli/          — логика CLI
       shared/       — protocol, models, version, crypto
 
     assets/         — 3D-модели, шейдеры, шрифты
     migrations/     — SQL-миграции
-    deploy/         — Docker, Ansible, K8s, Nginx
+    deploy/         — Docker, Ansible, K8s, Helm, Nginx
     monitoring/     — Prometheus, Grafana, Loki
     docs/           — документация
 
 ## Статус
 
-В разработке. Этап 0 — организационная база.
+- [x] Go-сервер (TCP, 20 Гц, metrics, admin HTTP)
+- [x] Go-клиент (raylib, 6DOF, меню, чат, интерполяция)
+- [x] Docker (multi-stage, scratch, ~4.5 МБ)
+- [x] docker-compose (PostgreSQL + Redis)
+- [x] CI (GitHub Actions: lint, test, build, docker, trivy)
+- [x] Образ в GHCR (публичный)
+- [x] k3d кластер + базовый деплой
+- [ ] Helm-чарт
+- [ ] ArgoCD (CD)
+- [ ] Prometheus + Grafana
+- [ ] Terraform + Ansible (VPS)
 
 ## Лицензия
 
 Apache License 2.0 — см. [LICENSE](LICENSE).
-![CI](https://github.com/spacedreamer99/LODEEN/actions/workflows/ci.yml/badge.svg)
-
-![CI](https://github.com/spacedreamer99/LODEEN/actions/workflows/ci.yml/badge.svg)
