@@ -116,3 +116,5 @@ Chain of Trust: каждый link — отдельный акт верифика
 
 Apache License 2.0 — см. [LICENSE](LICENSE).
 ![CI](https://github.com/spacedreamer99/LODEEN/actions/workflows/ci.yml/badge.svg)
+
+![CI](https://github.com/spacedreamer99/LODEEN/actions/workflows/ci.yml/badge.svg)
