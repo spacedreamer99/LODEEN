@@ -75,7 +75,7 @@ func run() error {
 	adminMux.HandleFunc("/version", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		info := version.Get()
-		fmt.Fprintf(w, `{"version":%q,"commit":%q,"date":%q,"go":%q}`,
+		_, _ = fmt.Fprintf(w, `{"version":%q,"commit":%q,"date":%q,"go":%q}`,
 			info.Version, info.Commit, info.Date, info.GoVersion)
 	})
 

@@ -9,6 +9,13 @@ linters:
   enable:
     - misspell
     - revive
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
   exclusions:
     rules:
       - path: _test\.go
