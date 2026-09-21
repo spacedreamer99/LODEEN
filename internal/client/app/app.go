@@ -40,6 +40,8 @@ type App struct {
 	menuAddr  string
 	menuErr   string
 	menuFocus int
+
+	cursorCaptured bool
 }
 
 func New(cfg *config.Config, log *slog.Logger) *App {
@@ -86,8 +88,25 @@ func (a *App) Run() error {
 		a.update(dt)
 		a.draw()
 	}
+	a.setCursorCaptured(false)
 	a.nc.Disconnect()
 	return nil
+}
+
+func (a *App) setCursorCaptured(c bool) {
+	if a.cursorCaptured == c {
+		return
+	}
+	a.cursorCaptured = c
+	if c {
+		rl.DisableCursor()
+		midX := rl.GetScreenWidth() / 2
+		midY := rl.GetScreenHeight() / 2
+		rl.SetMousePosition(midX, midY)
+	} else {
+		rl.EnableCursor()
+		rl.ShowCursor()
+	}
 }
 
 func (a *App) update(dt float32) {
@@ -115,8 +134,7 @@ func (a *App) drainChat() {
 }
 
 func (a *App) updateMenu() {
-	rl.EnableCursor()
-	rl.ShowCursor()
+	a.setCursorCaptured(false)
 
 	ui.EditField(&a.menuNick, a.menuFocus == 0, 32)
 	ui.EditField(&a.menuAddr, a.menuFocus == 1, 64)
@@ -131,31 +149,30 @@ func (a *App) updateMenu() {
 
 func (a *App) updatePlaying(dt float32) {
 	if a.chat.Open {
+		a.setCursorCaptured(false)
 		if text, ok := a.chat.Update(); ok && text != "" {
 			if err := a.nc.SendChat(text); err != nil {
 				a.log.Warn("send chat", "err", err)
 			}
 		}
-		rl.EnableCursor()
-		rl.ShowCursor()
 		return
 	}
 
 	if rl.IsKeyPressed(rl.KeyT) {
 		a.chat.Begin()
-		rl.EnableCursor()
-		rl.ShowCursor()
 		return
 	}
 	if rl.IsKeyPressed(rl.KeyEscape) {
 		a.mode = state.ModePaused
-		rl.EnableCursor()
-		rl.ShowCursor()
 		return
 	}
 
-	rl.DisableCursor()
-	rl.HideCursor()
+	if !rl.IsWindowFocused() {
+		a.setCursorCaptured(false)
+		return
+	}
+
+	a.setCursorCaptured(true)
 
 	if a.flight == nil {
 		return
@@ -163,6 +180,13 @@ func (a *App) updatePlaying(dt float32) {
 
 	md := rl.GetMouseDelta()
 	a.flight.Update(dt, md)
+
+	// Wayland fallback: если DisableCursor не центрует — центруем вручную.
+	midX := rl.GetScreenWidth() / 2
+	midY := rl.GetScreenHeight() / 2
+	if rl.GetMouseX() != int32(midX) || rl.GetMouseY() != int32(midY) {
+		rl.SetMousePosition(midX, midY)
+	}
 
 	fw := a.flight.Forward()
 	a.camera.Position = a.flight.Pos
@@ -176,8 +200,7 @@ func (a *App) updatePlaying(dt float32) {
 }
 
 func (a *App) updatePaused() {
-	rl.EnableCursor()
-	rl.ShowCursor()
+	a.setCursorCaptured(false)
 
 	if rl.IsKeyPressed(rl.KeyEscape) {
 		a.mode = state.ModePlaying
@@ -247,7 +270,7 @@ func (a *App) drawMenu() {
 		fonts.Draw(a.menuErr, fx, 530, 18, rl.Red)
 	}
 
-	hint := "Tab - switch field - Enter - connect - Esc - quit (window close only via X)"
+	hint := "Tab - switch field - Enter - connect"
 	hw := fonts.Measure(hint, 16)
 	fonts.Draw(hint, (screenW-hw)/2, screenH-40, 16, rl.DarkGray)
 }
@@ -331,6 +354,7 @@ func (a *App) startConnect() {
 }
 
 func (a *App) disconnect() {
+	a.setCursorCaptured(false)
 	a.nc.Disconnect()
 	a.flight = nil
 	a.mode = state.ModeMenu
