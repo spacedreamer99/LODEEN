@@ -67,6 +67,25 @@ func DrawPlayers(players []protocol.PlayerState, ownID string, _ rl.Camera3D) {
 	}
 }
 
+func DrawResources(resources []protocol.Resource) {
+	for _, r := range resources {
+		pos := rl.NewVector3(r.X, r.Y, r.Z)
+		var col rl.Color
+		switch r.Type {
+		case "stone":
+			col = rl.NewColor(140, 140, 150, 255)
+		case "wood":
+			col = rl.NewColor(120, 80, 40, 255)
+		case "ore":
+			col = rl.NewColor(200, 170, 60, 255)
+		default:
+			col = rl.White
+		}
+		rl.DrawCube(pos, 1.0, 1.0, 1.0, col)
+		rl.DrawCubeWires(pos, 1.0, 1.0, 1.0, rl.Black)
+	}
+}
+
 func colorForID(id string) rl.Color {
 	var h uint32 = 2166136261
 	for i := 0; i < len(id); i++ {

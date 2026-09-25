@@ -6,6 +6,27 @@ import (
 	"github.com/spacedreamer99/lodeen/internal/client/fonts"
 )
 
+var (
+	mouseScaleX float32 = 1
+	mouseScaleY float32 = 1
+)
+
+// SetMouseScale устанавливает коэффициент пересчёта координат мыши
+// из реального окна в виртуальный UI-буфер.
+func SetMouseScale(sx, sy float32) {
+	if sx > 0 {
+		mouseScaleX = sx
+	}
+	if sy > 0 {
+		mouseScaleY = sy
+	}
+}
+
+func mousePos() rl.Vector2 {
+	m := rl.GetMousePosition()
+	return rl.NewVector2(m.X/mouseScaleX, m.Y/mouseScaleY)
+}
+
 type Button struct {
 	Rect rl.Rectangle
 	Text string

@@ -44,6 +44,12 @@ type Client struct {
 
 	chatCh chan protocol.ChatMessage
 
+	resourcesMu sync.RWMutex
+	resources   []protocol.Resource
+
+	inventoryMu sync.RWMutex
+	inventory   map[string]int
+
 	stateMu   sync.Mutex
 	lastState protocol.PlayerState
 
@@ -55,9 +61,10 @@ type Client struct {
 
 func New(log *slog.Logger) *Client {
 	return &Client{
-		log:     log,
-		players: make(map[string][]timedState),
-		chatCh:  make(chan protocol.ChatMessage, 128),
+		log:       log,
+		players:   make(map[string][]timedState),
+		chatCh:    make(chan protocol.ChatMessage, 128),
+		inventory: make(map[string]int),
 	}
 }
 
@@ -80,6 +87,30 @@ func (c *Client) RTT() time.Duration {
 }
 
 func (c *Client) Chat() <-chan protocol.ChatMessage { return c.chatCh }
+
+func (c *Client) Resources() []protocol.Resource {
+	c.resourcesMu.RLock()
+	defer c.resourcesMu.RUnlock()
+	out := make([]protocol.Resource, len(c.resources))
+	copy(out, c.resources)
+	return out
+}
+
+func (c *Client) Inventory() map[string]int {
+	c.inventoryMu.RLock()
+	defer c.inventoryMu.RUnlock()
+	out := make(map[string]int, len(c.inventory))
+	for k, v := range c.inventory {
+		out[k] = v
+	}
+	return out
+}
+
+func (c *Client) HasInventory() bool {
+	c.inventoryMu.RLock()
+	defer c.inventoryMu.RUnlock()
+	return c.inventory != nil
+}
 
 func (c *Client) Connect(addr, nick string) (*protocol.Welcome, error) {
 	c.mu.Lock()
@@ -203,6 +234,10 @@ func (c *Client) StartStateLoop() {
 			}
 		}
 	}()
+}
+
+func (c *Client) PickupItem(resourceID string) error {
+	return c.send(protocol.TypePickupItem, protocol.PickupItem{ResourceID: resourceID})
 }
 
 func (c *Client) SendChat(text string) error {
@@ -336,6 +371,10 @@ func (c *Client) handle(env protocol.Envelope) {
 			}
 		}
 		c.playersMu.Unlock()
+		c.resourcesMu.Lock()
+		c.resources = make([]protocol.Resource, len(s.Resources))
+		copy(c.resources, s.Resources)
+		c.resourcesMu.Unlock()
 	case protocol.TypeChat:
 		var cm protocol.ChatMessage
 		_ = env.Decode(&cm)
@@ -343,6 +382,12 @@ func (c *Client) handle(env protocol.Envelope) {
 		case c.chatCh <- cm:
 		default:
 		}
+	case protocol.TypeInventoryUpdate:
+		var inv protocol.InventoryUpdate
+		_ = env.Decode(&inv)
+		c.inventoryMu.Lock()
+		c.inventory = inv.Items
+		c.inventoryMu.Unlock()
 	case protocol.TypePong:
 		var p protocol.Pong
 		_ = env.Decode(&p)

@@ -1,8 +1,10 @@
+// Package net implements the LODEEN TCP game server.
 package net
 
 import (
 	"context"
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -18,10 +20,13 @@ import (
 )
 
 const (
-	readTimeout  = 300 * time.Second
+	readTimeout  = 60 * time.Second
 	writeTimeout = 5 * time.Second
 	sendBufSize  = 256
+	pickupRadius = 5.0
 )
+
+var resourceTypes = []string{"stone", "wood", "ore"}
 
 type Metrics struct {
 	PlayersConnected prometheus.Gauge
@@ -37,8 +42,9 @@ type Client struct {
 	done chan struct{}
 	log  *slog.Logger
 
-	mu    sync.RWMutex
-	state protocol.PlayerState
+	mu        sync.RWMutex
+	state     protocol.PlayerState
+	inventory map[string]int
 }
 
 func (c *Client) State() protocol.PlayerState {
@@ -51,6 +57,20 @@ func (c *Client) setState(s protocol.PlayerState) {
 	c.mu.Lock()
 	c.state = s
 	c.mu.Unlock()
+}
+
+func (c *Client) addItem(item string) map[string]int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.inventory == nil {
+		c.inventory = make(map[string]int)
+	}
+	c.inventory[item]++
+	out := make(map[string]int, len(c.inventory))
+	for k, v := range c.inventory {
+		out[k] = v
+	}
+	return out
 }
 
 func (c *Client) enqueue(payload []byte) {
@@ -84,6 +104,9 @@ type Server struct {
 	mu      sync.RWMutex
 	clients map[string]*Client
 
+	resourcesMu sync.RWMutex
+	resources   map[string]protocol.Resource
+
 	tick uint64
 
 	wg        sync.WaitGroup
@@ -92,14 +115,38 @@ type Server struct {
 }
 
 func New(addr string, tickRate int, log *slog.Logger, m *Metrics) *Server {
-	return &Server{
-		addr:     addr,
-		tickRate: tickRate,
-		log:      log,
-		metrics:  m,
-		clients:  make(map[string]*Client),
-		done:     make(chan struct{}),
+	s := &Server{
+		addr:      addr,
+		tickRate:  tickRate,
+		log:       log,
+		metrics:   m,
+		clients:   make(map[string]*Client),
+		resources: make(map[string]protocol.Resource),
+		done:      make(chan struct{}),
 	}
+	s.spawnResources(30)
+	return s
+}
+
+func (s *Server) spawnResources(n int) {
+	for i := 0; i < n; i++ {
+		r := protocol.Resource{
+			ID:   newID(),
+			Type: resourceTypes[i%len(resourceTypes)],
+			X:    randomRange(-50, 50),
+			Y:    30,
+			Z:    randomRange(10, 110),
+		}
+		s.resources[r.ID] = r
+	}
+	s.log.Info("spawned resources", "count", n)
+}
+
+func randomRange(min, max float32) float32 {
+	var b [4]byte
+	_, _ = rand.Read(b[:])
+	n := binary.BigEndian.Uint32(b[:])
+	return min + (float32(n%100000)/100000.0)*(max-min)
 }
 
 func (s *Server) Start() error {
@@ -169,11 +216,12 @@ func (s *Server) handleConn(conn net.Conn) {
 	log := s.log.With("id", id, "remote", conn.RemoteAddr().String())
 
 	client := &Client{
-		ID:   id,
-		conn: conn,
-		send: make(chan []byte, sendBufSize),
-		done: make(chan struct{}),
-		log:  log,
+		ID:        id,
+		conn:      conn,
+		send:      make(chan []byte, sendBufSize),
+		done:      make(chan struct{}),
+		log:       log,
+		inventory: make(map[string]int),
 	}
 
 	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
@@ -207,6 +255,9 @@ func (s *Server) handleConn(conn net.Conn) {
 		TickRate:      s.tickRate,
 		ServerVersion: "dev",
 	})
+	client.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{
+		Items: map[string]int{},
+	})
 
 	s.mu.Lock()
 	s.clients[id] = client
@@ -234,7 +285,6 @@ func (s *Server) readLoop(c *Client) {
 		_ = c.conn.SetReadDeadline(time.Now().Add(readTimeout))
 		env, err := readEnvelope(c.conn)
 		if err != nil {
-			c.log.Info("read loop ended", "err", err.Error())
 			return
 		}
 		s.handleMessage(c, env)
@@ -283,7 +333,37 @@ func (s *Server) handleMessage(c *Client, env *protocol.Envelope) {
 			Sent:     p.Sent,
 			ServerTS: time.Now().UnixMilli(),
 		})
+	case protocol.TypePickupItem:
+		var p protocol.PickupItem
+		if err := env.Decode(&p); err != nil {
+			return
+		}
+		s.handlePickup(c, p.ResourceID)
 	}
+}
+
+func (s *Server) handlePickup(c *Client, resourceID string) {
+	ps := c.State()
+
+	s.resourcesMu.Lock()
+	r, ok := s.resources[resourceID]
+	if !ok {
+		s.resourcesMu.Unlock()
+		return
+	}
+	dx := float64(r.X - ps.X)
+	dy := float64(r.Y - ps.Y)
+	dz := float64(r.Z - ps.Z)
+	if dx*dx+dy*dy+dz*dz > pickupRadius*pickupRadius {
+		s.resourcesMu.Unlock()
+		return
+	}
+	delete(s.resources, resourceID)
+	s.resourcesMu.Unlock()
+
+	inv := c.addItem(r.Type)
+	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
+	c.log.Info("item picked up", "item", r.Type)
 }
 
 func (s *Server) broadcast(t protocol.Type, data any) {
@@ -327,9 +407,17 @@ func (s *Server) broadcastSnapshot() {
 	}
 	s.mu.RUnlock()
 
+	s.resourcesMu.RLock()
+	resources := make([]protocol.Resource, 0, len(s.resources))
+	for _, r := range s.resources {
+		resources = append(resources, r)
+	}
+	s.resourcesMu.RUnlock()
+
 	env, err := protocol.NewEnvelope(protocol.TypeSnapshot, protocol.Snapshot{
-		Tick:    s.tick,
-		Players: players,
+		Tick:      s.tick,
+		Players:   players,
+		Resources: resources,
 	})
 	if err != nil {
 		return

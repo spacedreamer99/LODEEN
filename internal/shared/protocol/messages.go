@@ -5,13 +5,15 @@ import "encoding/json"
 type Type string
 
 const (
-	TypeHello    Type = "hello"
-	TypeWelcome  Type = "welcome"
-	TypeState    Type = "state"
-	TypeSnapshot Type = "snapshot"
-	TypeChat     Type = "chat"
-	TypePing     Type = "ping"
-	TypePong     Type = "pong"
+	TypeHello           Type = "hello"
+	TypeWelcome         Type = "welcome"
+	TypeState           Type = "state"
+	TypeSnapshot        Type = "snapshot"
+	TypeChat            Type = "chat"
+	TypePing            Type = "ping"
+	TypePong            Type = "pong"
+	TypePickupItem      Type = "pickup_item"
+	TypeInventoryUpdate Type = "inventory_update"
 )
 
 type Envelope struct {
@@ -56,9 +58,18 @@ type PlayerState struct {
 	Pitch float32 `json:"pitch"`
 }
 
+type Resource struct {
+	ID   string  `json:"id"`
+	Type string  `json:"type"`
+	X    float32 `json:"x"`
+	Y    float32 `json:"y"`
+	Z    float32 `json:"z"`
+}
+
 type Snapshot struct {
-	Tick    uint64        `json:"tick"`
-	Players []PlayerState `json:"players"`
+	Tick      uint64        `json:"tick"`
+	Players   []PlayerState `json:"players"`
+	Resources []Resource    `json:"resources"`
 }
 
 type ChatMessage struct {
@@ -74,4 +85,12 @@ type Ping struct {
 type Pong struct {
 	Sent     int64 `json:"sent"`
 	ServerTS int64 `json:"server_ts"`
+}
+
+type PickupItem struct {
+	ResourceID string `json:"resource_id"`
+}
+
+type InventoryUpdate struct {
+	Items map[string]int `json:"items"`
 }
