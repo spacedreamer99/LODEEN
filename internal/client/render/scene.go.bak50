@@ -349,14 +349,6 @@ func DrawMobs(mobs []protocol.Mob) {
 	}
 }
 
-func DrawProjectiles(projs []protocol.MobProjectile) {
-	for _, p := range projs {
-		pos := rl.NewVector3(p.X, p.Y, p.Z)
-		rl.DrawSphere(pos, 0.3, rl.NewColor(255, 200, 60, 255))
-		rl.DrawSphereWires(pos, 0.3, 8, 8, rl.NewColor(180, 120, 20, 255))
-	}
-}
-
 func DrawWells(wells []protocol.Well) {
 	blue := rl.NewColor(40, 110, 220, 255)
 	blueDark := rl.NewColor(20, 60, 140, 255)

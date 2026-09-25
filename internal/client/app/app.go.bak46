@@ -68,8 +68,6 @@ type App struct {
 	lastKeys     string
 	lastSentHeld string
 	ridingID     string
-	hp           int
-	hpReceived   bool
 	boatID       string
 	lastMouse    string
 	lastLogAt    time.Time
@@ -78,7 +76,6 @@ type App struct {
 
 func New(cfg *config.Config, log *slog.Logger) *App {
 	return &App{
-		hp:       100,
 		cfg:      cfg,
 		log:      log,
 		mode:     state.ModeMenu,
@@ -192,13 +189,6 @@ func (a *App) updateMenu() {
 }
 
 func (a *App) updatePlaying(dt float32) {
-	// Обновляем HP из сети.
-	if a.nc != nil {
-		if hp := a.nc.OwnHP(); hp > 0 || a.hpReceived {
-			a.hp = hp
-			a.hpReceived = true
-		}
-	}
 	if a.chat.Open {
 		a.setCursorCaptured(false)
 		if text, ok := a.chat.Update(); ok && text != "" {
@@ -398,8 +388,8 @@ func (a *App) updatePlaying(dt float32) {
 		}
 	afterLMB:
 	}
-	// Смерть → меню (только если уже получали HP из сети).
-	if a.hpReceived && a.myHP() <= 0 {
+	// Смерть → меню.
+	if a.myHP() <= 0 {
 		a.log.Info("player HP zero, returning to menu")
 		a.mode = state.ModeMenu
 		return
@@ -914,7 +904,6 @@ func (a *App) startConnect() {
 		a.log.Warn("connect failed", "err", err)
 		return
 	}
-	a.hp = 100
 	a.log.Info("connected", "took", time.Since(start).String())
 
 	spawn := render.SpawnFromID(welcome.PlayerID)
@@ -1472,7 +1461,13 @@ func (a *App) drawHeldItem() {
 
 // heldItem возвращает тип предмета в selectedSlot (пустая строка — ничего).
 func (a *App) myHP() int {
-	return a.hp
+	me := a.nc.PlayerID()
+	for _, p := range a.nc.Players() {
+		if p.ID == me {
+			return p.HP
+		}
+	}
+	return 100
 }
 
 func (a *App) heldItem() string {

@@ -1,0 +1,187 @@
+package render
+
+import (
+	rl "github.com/gen2brain/raylib-go/raylib"
+
+	"github.com/spacedreamer99/lodeen/internal/shared/protocol"
+)
+
+const playerCubeSize = 5.0
+
+type Scene struct {
+	planet    rl.Model
+	hasPlanet bool
+
+	fallback rl.Model // сфера-заглушка, если glb не загрузилась
+
+	planetPos   rl.Vector3
+	planetScale float32
+}
+
+func NewScene(planetPath string) *Scene {
+	s := &Scene{
+		planetPos:   rl.Vector3Zero(),
+		planetScale: 1.0,
+	}
+	// Fallback-сфера через меш — чтобы заливка и wireframe совпадали.
+	mesh := rl.GenMeshSphere(protocol.PlanetRadius, 48, 48)
+	s.fallback = rl.LoadModelFromMesh(mesh)
+
+	if planetPath != "" {
+		m := rl.LoadModel(planetPath)
+		if m.MeshCount > 0 {
+			s.planet = m
+			s.hasPlanet = true
+		}
+	}
+	return s
+}
+
+func (s *Scene) Unload() {
+	if s.hasPlanet {
+		rl.UnloadModel(s.planet)
+	}
+	rl.UnloadModel(s.fallback)
+}
+
+func (s *Scene) HasPlanet() bool { return s.hasPlanet }
+
+func (s *Scene) SetPlanetScale(scale float32) { s.planetScale = scale }
+
+func (s *Scene) Draw() {
+	rl.DrawLine3D(rl.Vector3Zero(), rl.NewVector3(100, 0, 0), rl.Red)
+	rl.DrawLine3D(rl.Vector3Zero(), rl.NewVector3(0, 100, 0), rl.Green)
+	rl.DrawLine3D(rl.Vector3Zero(), rl.NewVector3(0, 0, 100), rl.Blue)
+
+	if s.hasPlanet {
+		rl.DrawModel(s.planet, s.planetPos, s.planetScale, rl.White)
+	} else {
+		// Один меш — рисуем и заливку, и wireframe.
+		// Так обводка совпадает с формой ровно.
+		rl.DrawModel(s.fallback, s.planetPos, s.planetScale, rl.NewColor(60, 90, 140, 255))
+		rl.DrawModelWires(s.fallback, s.planetPos, s.planetScale, rl.NewColor(120, 160, 200, 180))
+	}
+}
+
+func DrawPlayers(players []protocol.PlayerState, ownID string, _ rl.Camera3D) {
+	for _, p := range players {
+		if p.ID == ownID {
+			continue
+		}
+		pos := rl.NewVector3(p.X, p.Y, p.Z)
+		col := colorForID(p.ID)
+
+		rl.DrawCube(pos, playerCubeSize, playerCubeSize, playerCubeSize, col)
+		rl.DrawCubeWires(pos, playerCubeSize, playerCubeSize, playerCubeSize, rl.Black)
+	}
+}
+
+func DrawResources(resources []protocol.Resource) {
+	for _, r := range resources {
+		pos := rl.NewVector3(r.X, r.Y, r.Z)
+		var col rl.Color
+		switch r.Type {
+		case "stone":
+			col = rl.NewColor(140, 140, 150, 255)
+		case "wood":
+			col = rl.NewColor(120, 80, 40, 255)
+		case "ore":
+			col = rl.NewColor(200, 170, 60, 255)
+		case "fruit":
+			col = rl.NewColor(230, 70, 70, 255)
+		case "meat":
+			col = rl.NewColor(200, 100, 100, 255)
+		case "spear":
+			col = rl.NewColor(180, 160, 120, 255)
+		case "water":
+			col = rl.NewColor(60, 120, 220, 255)
+		case "seed":
+			if r.Watered {
+				col = rl.NewColor(150, 240, 100, 255) // светло-зелёный — полит
+			} else {
+				col = rl.NewColor(30, 100, 30, 255) // тёмно-зелёный — ждёт воду
+			}
+		default:
+			col = rl.NewColor(255, 0, 255, 255) // magenta — "неизвестный тип"
+		}
+		size := float32(1.0)
+		if r.Type == "seed" {
+			size = 0.6
+		}
+		rl.DrawCube(pos, size, size, size, col)
+		rl.DrawCubeWires(pos, size, size, size, rl.Black)
+	}
+}
+
+func colorForID(id string) rl.Color {
+	var h uint32 = 2166136261
+	for i := 0; i < len(id); i++ {
+		h ^= uint32(id[i])
+		h *= 16777619
+	}
+	r := uint8(96 + (h>>0)&0x7F)
+	g := uint8(96 + (h>>8)&0x7F)
+	b := uint8(96 + (h>>16)&0x7F)
+	return rl.NewColor(r, g, b, 255)
+}
+
+func SpawnFromID(id string) rl.Vector3 {
+	// Точка на экваторе — стабильное "северное" направление.
+	r := protocol.PlanetRadius + protocol.PlayerHeight
+	return rl.NewVector3(r, 0, 0)
+}
+
+func SpawnYawFromID(id string) float32 {
+	h := hashID(id)
+	angle := float64(h%360) * 3.141592653589793 / 180.0
+	return float32(angle)
+}
+
+func hashID(id string) uint32 {
+	var h uint32 = 2166136261
+	for i := 0; i < len(id); i++ {
+		h ^= uint32(id[i])
+		h *= 16777619
+	}
+	return h
+}
+
+// DrawLeash — линия от точки A до мамонта.
+func DrawLeash(from, to rl.Vector3) {
+	rl.DrawLine3D(from, to, rl.NewColor(150, 110, 70, 255))
+}
+
+func DrawWells(wells []protocol.Well) {
+	blue := rl.NewColor(40, 110, 220, 255)
+	blueDark := rl.NewColor(20, 60, 140, 255)
+	for _, w := range wells {
+		pos := rl.NewVector3(w.X, w.Y, w.Z)
+		// Просто большой яркий куб — проще увидеть, чем цилиндр.
+		// 4x4x4 вместо пирамиды, чтобы точно заметить.
+		rl.DrawCube(pos, 4.0, 4.0, 4.0, blue)
+		rl.DrawCubeWires(pos, 4.0, 4.0, 4.0, blueDark)
+	}
+}
+
+func DrawMammoths(mammoths []protocol.Mammoth) {
+	for _, m := range mammoths {
+		pos := rl.NewVector3(m.X, m.Y, m.Z)
+		var col rl.Color
+		if m.Sex == "f" {
+			col = rl.NewColor(150, 110, 80, 255)
+		} else {
+			col = rl.NewColor(110, 80, 60, 255)
+		}
+		if m.Tamed {
+			col.R += 40
+			col.G += 40
+			col.B += 40
+		}
+		size := float32(3.0)
+		if m.Baby {
+			size = 1.5
+		}
+		rl.DrawCube(pos, size, size, size, col)
+		rl.DrawCubeWires(pos, size, size, size, rl.Black)
+	}
+}

@@ -68,9 +68,6 @@ type App struct {
 	lastKeys     string
 	lastSentHeld string
 	ridingID     string
-	hp           int
-	hpReceived   bool
-	boatID       string
 	lastMouse    string
 	lastLogAt    time.Time
 	lastPos      rl.Vector3
@@ -78,7 +75,6 @@ type App struct {
 
 func New(cfg *config.Config, log *slog.Logger) *App {
 	return &App{
-		hp:       100,
 		cfg:      cfg,
 		log:      log,
 		mode:     state.ModeMenu,
@@ -192,13 +188,6 @@ func (a *App) updateMenu() {
 }
 
 func (a *App) updatePlaying(dt float32) {
-	// Обновляем HP из сети.
-	if a.nc != nil {
-		if hp := a.nc.OwnHP(); hp > 0 || a.hpReceived {
-			a.hp = hp
-			a.hpReceived = true
-		}
-	}
 	if a.chat.Open {
 		a.setCursorCaptured(false)
 		if text, ok := a.chat.Update(); ok && text != "" {
@@ -398,12 +387,6 @@ func (a *App) updatePlaying(dt float32) {
 		}
 	afterLMB:
 	}
-	// Смерть → меню (только если уже получали HP из сети).
-	if a.hpReceived && a.myHP() <= 0 {
-		a.log.Info("player HP zero, returning to menu")
-		a.mode = state.ModeMenu
-		return
-	}
 	if rl.IsKeyPressed(rl.KeyEscape) {
 		a.mode = state.ModePaused
 		return
@@ -528,8 +511,6 @@ func (a *App) draw() {
 		render.DrawWells(a.nc.Wells())
 		render.DrawHouses(a.nc.Houses())
 		render.DrawBoats(a.nc.Boats())
-		render.DrawMobs(a.nc.Mobs())
-		render.DrawProjectiles(a.nc.Projectiles())
 		me := a.nc.PlayerID()
 		if me != "" {
 			for _, m := range a.nc.Mammoths() {
@@ -828,20 +809,6 @@ func (a *App) drawHUD() {
 	if a.flight != nil && a.flight.Mode == input.ModeSurvival {
 		a.drawHotbar()
 	}
-	// HP bar.
-	hpVal := a.myHP()
-	hpBarW := float32(200)
-	hpBarH := float32(16)
-	hpBarX := int32(20)
-	hpBarY := int32(60)
-	rl.DrawRectangle(hpBarX, hpBarY, int32(hpBarW), int32(hpBarH), rl.NewColor(60, 20, 20, 200))
-	hpFill := hpBarW * float32(hpVal) / 100.0
-	if hpFill < 0 {
-		hpFill = 0
-	}
-	rl.DrawRectangle(hpBarX, hpBarY, int32(hpFill), int32(hpBarH), rl.NewColor(200, 40, 40, 255))
-	rl.DrawRectangleLines(hpBarX, hpBarY, int32(hpBarW), int32(hpBarH), rl.Black)
-	fonts.Draw(fmt.Sprintf("HP: %d", hpVal), hpBarX+int32(hpBarW)+8, hpBarY, 16, rl.RayWhite)
 }
 
 // drawHotbar — первая строка инвентаря внизу по центру.
@@ -914,7 +881,6 @@ func (a *App) startConnect() {
 		a.log.Warn("connect failed", "err", err)
 		return
 	}
-	a.hp = 100
 	a.log.Info("connected", "took", time.Since(start).String())
 
 	spawn := render.SpawnFromID(welcome.PlayerID)
@@ -1471,10 +1437,6 @@ func (a *App) drawHeldItem() {
 }
 
 // heldItem возвращает тип предмета в selectedSlot (пустая строка — ничего).
-func (a *App) myHP() int {
-	return a.hp
-}
-
 func (a *App) heldItem() string {
 	inv := a.nc.Inventory()
 	items := []string{}

@@ -194,10 +194,8 @@ func (a *App) updateMenu() {
 func (a *App) updatePlaying(dt float32) {
 	// Обновляем HP из сети.
 	if a.nc != nil {
-		if hp := a.nc.OwnHP(); hp > 0 || a.hpReceived {
-			a.hp = hp
-			a.hpReceived = true
-		}
+		a.hp = a.nc.OwnHP()
+		a.hpReceived = true
 	}
 	if a.chat.Open {
 		a.setCursorCaptured(false)

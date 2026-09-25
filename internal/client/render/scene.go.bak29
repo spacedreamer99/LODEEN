@@ -14,9 +14,8 @@ type Scene struct {
 	planet    rl.Model
 	hasPlanet bool
 
-	fallback       rl.Model
-	fallbackMat    rl.Material
-	fallbackColors []byte
+	fallbackMesh rl.Mesh
+	fallbackMat  rl.Material
 
 	water rl.Model
 
@@ -30,28 +29,27 @@ func NewScene(planetPath string) *Scene {
 		planetScale: 1.0,
 	}
 
-	// 1. Загружаем плоскую сферу — VaoID уже создан.
+	// Fallback-сфера: деформируем И грузим на GPU сразу.
 	mesh := rl.GenMeshSphere(protocol.PlanetRadius, 96, 96)
-	s.fallback = rl.LoadModelFromMesh(mesh)
-
-	// 2. Деформируем уже загруженный меш + UpdateMeshBuffer → GPU.
-	fbMeshes := unsafe.Slice(s.fallback.Meshes, int(s.fallback.MeshCount))
-	for i := range fbMeshes {
-		deformMesh(&fbMeshes[i])
-	}
-
-	// 3. Зелёный tint материала.
+	rl.TraceLog(rl.LogInfo, "after GenMeshSphere: VaoID=%d", mesh.VaoID)
+	deformMesh(&mesh)
+	rl.TraceLog(rl.LogInfo, "after UploadMesh: VaoID=%d", mesh.VaoID)
+	s.fallbackMesh = mesh
 	s.fallbackMat = rl.LoadMaterialDefault()
-	s.fallbackMat.Maps.Color = rl.NewColor(80, 140, 90, 255)
 
 	if planetPath != "" {
 		m := rl.LoadModel(planetPath)
 		if m.MeshCount > 0 {
+			meshes := unsafe.Slice(m.Meshes, int(m.MeshCount))
+			for i := range meshes {
+				deformMesh(&meshes[i])
+			}
 			s.planet = m
 			s.hasPlanet = true
 		}
 	}
 
+	// Вода — сфера на уровне SeaLevel.
 	waterMesh := rl.GenMeshSphere(protocol.SeaLevel, 64, 64)
 	s.water = rl.LoadModelFromMesh(waterMesh)
 
@@ -62,7 +60,7 @@ func (s *Scene) Unload() {
 	if s.hasPlanet {
 		rl.UnloadModel(s.planet)
 	}
-	rl.UnloadModel(s.fallback)
+	rl.UnloadMesh(&s.fallbackMesh)
 }
 
 func (s *Scene) HasPlanet() bool { return s.hasPlanet }
@@ -72,17 +70,9 @@ func (s *Scene) SetPlanetScale(scale float32) { s.planetScale = scale }
 func (s *Scene) Draw() {
 	if s.hasPlanet {
 		rl.DrawModel(s.planet, s.planetPos, s.planetScale, rl.White)
-		return
+	} else {
+		rl.DrawMesh(s.fallbackMesh, s.fallbackMat, rl.MatrixIdentity())
 	}
-	// Зелёная планета.
-	rl.DrawModel(s.fallback, s.planetPos, s.planetScale,
-		rl.NewColor(80, 160, 90, 255))
-
-	// Wireframe поверх — тонкие тёмные линии рёбер.
-	rl.EnableWireMode()
-	rl.DrawModel(s.fallback, s.planetPos, s.planetScale,
-		rl.NewColor(20, 40, 25, 255))
-	rl.DisableWireMode()
 }
 
 func DrawPlayers(players []protocol.PlayerState, ownID string, _ rl.Camera3D) {
@@ -104,6 +94,7 @@ func deformMesh(mesh *rl.Mesh) {
 		return
 	}
 	verts := unsafe.Slice((*float32)(mesh.Vertices), int(mesh.VertexCount)*3)
+	minY, maxY := float32(1e9), float32(-1e9)
 	for i := 0; i < int(mesh.VertexCount); i++ {
 		x := verts[i*3+0]
 		y := verts[i*3+1]
@@ -119,15 +110,34 @@ func deformMesh(mesh *rl.Mesh) {
 		verts[i*3+0] = nx * h
 		verts[i*3+1] = ny * h
 		verts[i*3+2] = nz * h
+		if y < minY {
+			minY = y
+		}
+		if y > maxY {
+			maxY = y
+		}
 	}
 
-	// Перегружаем VBO — теперь VaoID != 0, команда летит в GPU.
+	// Vertex colors: сине-серый.
+	if mesh.Colors != nil {
+		colors := unsafe.Slice((*byte)(unsafe.Pointer(mesh.Colors)), int(mesh.VertexCount)*4)
+		for i := 0; i < int(mesh.VertexCount); i++ {
+			// Зелёный цвет травы.
+			colors[i*4+0] = 100
+			colors[i*4+1] = 200
+			colors[i*4+2] = 90
+			colors[i*4+3] = 255
+		}
+	}
+
+	// Перегружаем VBO, если mesh уже на GPU.
 	if mesh.VaoID != 0 {
 		bytes := unsafe.Slice((*byte)(unsafe.Pointer(mesh.Vertices)), int(mesh.VertexCount)*3*4)
 		rl.UpdateMeshBuffer(*mesh, 0, bytes, 0)
-		rl.TraceLog(rl.LogInfo, "deformMesh: UpdateMeshBuffer %d bytes VaoID=%d",
-			len(bytes), mesh.VaoID)
 	}
+
+	rl.TraceLog(rl.LogInfo, "deformMesh: verts=%d minY=%.2f maxY=%.2f VaoID=%d",
+		mesh.VertexCount, minY, maxY, mesh.VaoID)
 }
 
 // DrawWater рисует полупрозрачную воду на уровне SeaLevel.
@@ -135,7 +145,7 @@ func (s *Scene) DrawWater() {
 	if s.water.MeshCount == 0 {
 		return
 	}
-	rl.DrawModel(s.water, s.planetPos, s.planetScale, rl.NewColor(40, 100, 200, 255))
+	rl.DrawModel(s.water, s.planetPos, s.planetScale, rl.NewColor(40, 100, 200, 120))
 }
 
 func DrawResources(resources []protocol.Resource) {
@@ -260,100 +270,6 @@ func DrawHouses(houses []protocol.House) {
 		rl.PopMatrix()
 
 		rl.PopMatrix()
-	}
-}
-
-func DrawBoats(boats []protocol.Boat) {
-	for _, b := range boats {
-		rl.PushMatrix()
-		rl.Translatef(b.X, b.Y, b.Z)
-		rl.Rotatef(b.Yaw*180.0/3.14159265, 0, 1, 0)
-		// Днище
-		rl.DrawCube(rl.NewVector3(0, -0.5, 0), 3, 0.4, 6,
-			rl.NewColor(120, 80, 40, 255))
-		rl.DrawCubeWires(rl.NewVector3(0, -0.5, 0), 3, 0.4, 6, rl.Black)
-		// Борта
-		rl.DrawCube(rl.NewVector3(-1.4, 0, 0), 0.2, 0.8, 6,
-			rl.NewColor(140, 95, 55, 255))
-		rl.DrawCube(rl.NewVector3(1.4, 0, 0), 0.2, 0.8, 6,
-			rl.NewColor(140, 95, 55, 255))
-		// Нос и корма
-		rl.DrawCube(rl.NewVector3(0, 0, -2.9), 3, 0.8, 0.2,
-			rl.NewColor(140, 95, 55, 255))
-		rl.DrawCube(rl.NewVector3(0, 0, 2.9), 3, 0.8, 0.2,
-			rl.NewColor(140, 95, 55, 255))
-		rl.PopMatrix()
-	}
-}
-
-// DrawMobs — враждебные/нейтральные боты.
-// Чёрный куб 2x2x2 с серыми пятнами на всех гранях — «пиксельная текстура».
-func DrawMobs(mobs []protocol.Mob) {
-	black := rl.NewColor(10, 10, 10, 255)
-	spot := rl.NewColor(180, 180, 180, 255)
-	redEye := rl.NewColor(220, 40, 40, 255)
-
-	for _, m := range mobs {
-		pos := rl.NewVector3(m.X, m.Y, m.Z)
-		size := float32(2.0)
-
-		// Враждебные — чёрные с красными глазами. Другие — серо-чёрные.
-		base := black
-		if m.Kind != "hostile" {
-			base = rl.NewColor(50, 50, 60, 255)
-		}
-
-		// Основа
-		rl.DrawCube(pos, size, size, size, base)
-
-		// Пятна на гранях: 4 угла + центр для каждой грани.
-		h := size/2 + 0.02
-		s := size * 0.18
-		offsets := [][2]float32{
-			{-0.6, -0.6}, {-0.6, 0.6},
-			{0.6, -0.6}, {0.6, 0.6},
-			{0.0, 0.0},
-		}
-
-		// 6 граней
-		for _, face := range []int{0, 1, 2, 3, 4, 5} {
-			for _, o := range offsets {
-				var off rl.Vector3
-				a := o[0] * size / 2
-				b := o[1] * size / 2
-				switch face {
-				case 0:
-					off = rl.NewVector3(a, b, h)
-				case 1:
-					off = rl.NewVector3(a, b, -h)
-				case 2:
-					off = rl.NewVector3(h, a, b)
-				case 3:
-					off = rl.NewVector3(-h, a, b)
-				case 4:
-					off = rl.NewVector3(a, h, b)
-				case 5:
-					off = rl.NewVector3(a, -h, b)
-				}
-				rl.DrawCube(rl.Vector3Add(pos, off), s, s, s, spot)
-			}
-		}
-
-		// Красные глаза спереди-сверху (для враждебных).
-		if m.Kind == "hostile" {
-			eyeL := rl.NewVector3(pos.X-size*0.25, pos.Y+size*0.3, pos.Z+h)
-			eyeR := rl.NewVector3(pos.X+size*0.25, pos.Y+size*0.3, pos.Z+h)
-			rl.DrawCube(eyeL, 0.25, 0.25, 0.1, redEye)
-			rl.DrawCube(eyeR, 0.25, 0.25, 0.1, redEye)
-		}
-	}
-}
-
-func DrawProjectiles(projs []protocol.MobProjectile) {
-	for _, p := range projs {
-		pos := rl.NewVector3(p.X, p.Y, p.Z)
-		rl.DrawSphere(pos, 0.3, rl.NewColor(255, 200, 60, 255))
-		rl.DrawSphereWires(pos, 0.3, 8, 8, rl.NewColor(180, 120, 20, 255))
 	}
 }
 

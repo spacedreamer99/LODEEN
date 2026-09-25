@@ -116,12 +116,6 @@ func (c *Client) Hunger() float32 {
 	return c.ownHunger
 }
 
-func (c *Client) OwnHP() int {
-	c.ownHungerMu.RLock()
-	defer c.ownHungerMu.RUnlock()
-	return c.ownHP
-}
-
 func (c *Client) Houses() []protocol.House {
 	c.housesMu.RLock()
 	defer c.housesMu.RUnlock()
@@ -523,7 +517,6 @@ func (c *Client) handle(env protocol.Envelope) {
 			if p.ID == selfID {
 				c.ownHungerMu.Lock()
 				c.ownHunger = p.Hunger
-				c.ownHP = p.HP
 				c.ownHungerMu.Unlock()
 			}
 		}

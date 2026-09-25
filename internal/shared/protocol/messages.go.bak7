@@ -31,13 +31,6 @@ const (
 	TypeTameMammoth     Type = "tame_mammoth"
 	TypeSelectItem      Type = "select_item"
 	TypeLeashMammoth    Type = "leash_mammoth"
-	TypePlaceHouse      Type = "place_house"
-	TypeToggleDoor      Type = "toggle_door"
-	TypeSaddleMammoth   Type = "saddle_mammoth"
-	TypeRideMammoth     Type = "ride_mammoth"
-	TypePlaceBoat       Type = "place_boat"
-	TypeEnterBoat       Type = "enter_boat"
-	TypeHitMob          Type = "hit_mob"
 )
 
 type Envelope struct {
@@ -81,7 +74,6 @@ type PlayerState struct {
 	Yaw    float32 `json:"yaw"`
 	Pitch  float32 `json:"pitch"`
 	Hunger float32 `json:"hunger"`
-	HP     int     `json:"hp"`
 }
 
 type Resource struct {
@@ -105,91 +97,14 @@ type Mammoth struct {
 	FedCount  int     `json:"fed_count,omitempty"`
 	Baby      bool    `json:"baby,omitempty"`
 	LeashedTo string  `json:"leashed_to,omitempty"`
-	Saddle    bool    `json:"saddle,omitempty"`
-	RiderID   string  `json:"rider_id,omitempty"`
 }
 
 type Snapshot struct {
-	Tick        uint64          `json:"tick"`
-	Players     []PlayerState   `json:"players"`
-	Resources   []Resource      `json:"resources"`
-	Mammoths    []Mammoth       `json:"mammoths"`
-	Wells       []Well          `json:"wells"`
-	Houses      []House         `json:"houses"`
-	Boats       []Boat          `json:"boats"`
-	Mobs        []Mob           `json:"mobs"`
-	Projectiles []MobProjectile `json:"projectiles"`
-}
-
-type MobProjectile struct {
-	ID string  `json:"id"`
-	X  float32 `json:"x"`
-	Y  float32 `json:"y"`
-	Z  float32 `json:"z"`
-	DX float32 `json:"dx"`
-	DY float32 `json:"dy"`
-	DZ float32 `json:"dz"`
-}
-
-type HitMob struct {
-	MobID string `json:"mob_id"`
-}
-
-type Mob struct {
-	ID   string  `json:"id"`
-	X    float32 `json:"x"`
-	Y    float32 `json:"y"`
-	Z    float32 `json:"z"`
-	HP   int     `json:"hp"`
-	Kind string  `json:"kind"`
-}
-
-type Boat struct {
-	ID      string  `json:"id"`
-	X       float32 `json:"x"`
-	Y       float32 `json:"y"`
-	Z       float32 `json:"z"`
-	Yaw     float32 `json:"yaw"`
-	RiderID string  `json:"rider_id,omitempty"`
-}
-
-type PlaceBoat struct {
-	X   float32 `json:"x"`
-	Y   float32 `json:"y"`
-	Z   float32 `json:"z"`
-	Yaw float32 `json:"yaw"`
-}
-
-type EnterBoat struct {
-	BoatID string `json:"boat_id"`
-}
-
-type House struct {
-	ID       string  `json:"id"`
-	X        float32 `json:"x"`
-	Y        float32 `json:"y"`
-	Z        float32 `json:"z"`
-	Yaw      float32 `json:"yaw"`
-	DoorOpen bool    `json:"door_open,omitempty"`
-}
-
-type PlaceHouse struct {
-	X   float32 `json:"x"`
-	Y   float32 `json:"y"`
-	Z   float32 `json:"z"`
-	Yaw float32 `json:"yaw"`
-}
-
-type ToggleDoor struct {
-	HouseID string `json:"house_id"`
-}
-
-type SaddleMammoth struct {
-	MammothID string `json:"mammoth_id"`
-}
-
-type RideMammoth struct {
-	MammothID string `json:"mammoth_id"`
+	Tick      uint64        `json:"tick"`
+	Players   []PlayerState `json:"players"`
+	Resources []Resource    `json:"resources"`
+	Mammoths  []Mammoth     `json:"mammoths"`
+	Wells     []Well        `json:"wells"`
 }
 
 type Well struct {

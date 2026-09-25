@@ -148,22 +148,13 @@ func (f *FlightController) updateSurvival(dt float32) {
 	oldPos := f.Pos
 	dir := rl.Vector3Normalize(f.Pos)
 	th := protocol.TerrainHeight(dir.X, dir.Y, dir.Z)
-	overWater := th < protocol.SeaLevel // над водой или на воде
-	swimming := overWater && !f.InBoat  // пешком в воде
+	inWater := th < protocol.SeaLevel && !f.InBoat
 
 	ws := float32(walkSpeed)
-	switch {
-	case f.Riding:
-		// На мамонте — быстро.
+	if f.Riding {
 		ws *= 2.5
-	case f.InBoat && overWater:
-		// На лодке по воде — быстро.
-		ws *= 2.0
-	case f.InBoat && !overWater:
-		// На лодке по суше — очень медленно.
-		ws *= 0.15
-	case swimming:
-		// Пешком в воде — медленно.
+	} else if inWater {
+		// Плавание — медленно.
 		ws *= 0.35
 	}
 

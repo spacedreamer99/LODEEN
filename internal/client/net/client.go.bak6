@@ -44,7 +44,6 @@ type Client struct {
 
 	ownHungerMu sync.RWMutex
 	ownHunger   float32
-	ownHP       int
 
 	chatCh chan protocol.ChatMessage
 
@@ -56,18 +55,6 @@ type Client struct {
 
 	wellsMu sync.RWMutex
 	wells   []protocol.Well
-
-	housesMu sync.RWMutex
-	houses   []protocol.House
-
-	boatsMu sync.RWMutex
-	boats   []protocol.Boat
-
-	mobsMu sync.RWMutex
-	mobs   []protocol.Mob
-
-	projectilesMu sync.RWMutex
-	projectiles   []protocol.MobProjectile
 
 	inventoryMu sync.RWMutex
 	inventory   map[string]int
@@ -114,20 +101,6 @@ func (c *Client) Hunger() float32 {
 	c.ownHungerMu.RLock()
 	defer c.ownHungerMu.RUnlock()
 	return c.ownHunger
-}
-
-func (c *Client) OwnHP() int {
-	c.ownHungerMu.RLock()
-	defer c.ownHungerMu.RUnlock()
-	return c.ownHP
-}
-
-func (c *Client) Houses() []protocol.House {
-	c.housesMu.RLock()
-	defer c.housesMu.RUnlock()
-	out := make([]protocol.House, len(c.houses))
-	copy(out, c.houses)
-	return out
 }
 
 func (c *Client) Wells() []protocol.Well {
@@ -326,10 +299,6 @@ func (c *Client) TakeWater(wellID string) error {
 	return c.send(protocol.TypeTakeWater, protocol.TakeWater{WellID: wellID})
 }
 
-func (c *Client) HitMob(id string) error {
-	return c.send(protocol.TypeHitMob, protocol.HitMob{MobID: id})
-}
-
 func (c *Client) TameMammoth(id string) error {
 	return c.send(protocol.TypeTameMammoth, protocol.TameMammoth{MammothID: id})
 }
@@ -340,54 +309,6 @@ func (c *Client) SelectItem(item string) error {
 
 func (c *Client) LeashMammoth(id string) error {
 	return c.send(protocol.TypeLeashMammoth, protocol.LeashMammoth{MammothID: id})
-}
-
-func (c *Client) PlaceHouse(x, y, z, yaw float32) error {
-	return c.send(protocol.TypePlaceHouse, protocol.PlaceHouse{X: x, Y: y, Z: z, Yaw: yaw})
-}
-
-func (c *Client) ToggleDoor(houseID string) error {
-	return c.send(protocol.TypeToggleDoor, protocol.ToggleDoor{HouseID: houseID})
-}
-
-func (c *Client) SaddleMammoth(id string) error {
-	return c.send(protocol.TypeSaddleMammoth, protocol.SaddleMammoth{MammothID: id})
-}
-
-func (c *Client) PlaceBoat(x, y, z, yaw float32) error {
-	return c.send(protocol.TypePlaceBoat, protocol.PlaceBoat{X: x, Y: y, Z: z, Yaw: yaw})
-}
-
-func (c *Client) EnterBoat(boatID string) error {
-	return c.send(protocol.TypeEnterBoat, protocol.EnterBoat{BoatID: boatID})
-}
-
-func (c *Client) Projectiles() []protocol.MobProjectile {
-	c.projectilesMu.RLock()
-	defer c.projectilesMu.RUnlock()
-	out := make([]protocol.MobProjectile, len(c.projectiles))
-	copy(out, c.projectiles)
-	return out
-}
-
-func (c *Client) Mobs() []protocol.Mob {
-	c.mobsMu.RLock()
-	defer c.mobsMu.RUnlock()
-	out := make([]protocol.Mob, len(c.mobs))
-	copy(out, c.mobs)
-	return out
-}
-
-func (c *Client) Boats() []protocol.Boat {
-	c.boatsMu.RLock()
-	defer c.boatsMu.RUnlock()
-	out := make([]protocol.Boat, len(c.boats))
-	copy(out, c.boats)
-	return out
-}
-
-func (c *Client) RideMammoth(id string) error {
-	return c.send(protocol.TypeRideMammoth, protocol.RideMammoth{MammothID: id})
 }
 
 func (c *Client) SendChat(text string) error {
@@ -523,7 +444,6 @@ func (c *Client) handle(env protocol.Envelope) {
 			if p.ID == selfID {
 				c.ownHungerMu.Lock()
 				c.ownHunger = p.Hunger
-				c.ownHP = p.HP
 				c.ownHungerMu.Unlock()
 			}
 		}
@@ -547,26 +467,6 @@ func (c *Client) handle(env protocol.Envelope) {
 		c.wells = make([]protocol.Well, len(s.Wells))
 		copy(c.wells, s.Wells)
 		c.wellsMu.Unlock()
-
-		c.housesMu.Lock()
-		c.houses = make([]protocol.House, len(s.Houses))
-		copy(c.houses, s.Houses)
-		c.housesMu.Unlock()
-
-		c.boatsMu.Lock()
-		c.boats = make([]protocol.Boat, len(s.Boats))
-		copy(c.boats, s.Boats)
-		c.boatsMu.Unlock()
-
-		c.mobsMu.Lock()
-		c.mobs = make([]protocol.Mob, len(s.Mobs))
-		copy(c.mobs, s.Mobs)
-		c.mobsMu.Unlock()
-
-		c.projectilesMu.Lock()
-		c.projectiles = make([]protocol.MobProjectile, len(s.Projectiles))
-		copy(c.projectiles, s.Projectiles)
-		c.projectilesMu.Unlock()
 	case protocol.TypeChat:
 		var cm protocol.ChatMessage
 		_ = env.Decode(&cm)

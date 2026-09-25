@@ -48,7 +48,6 @@ type Client struct {
 	state       protocol.PlayerState
 	inventory   map[string]int
 	hunger      float32
-	hp          int
 	lastThrowAt time.Time
 	lastHitAt   time.Time
 	heldItem    string
@@ -57,31 +56,7 @@ type Client struct {
 func (c *Client) State() protocol.PlayerState {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	st := c.state
-	st.HP = c.hp
-	return st
-}
-
-func (c *Client) damage(n int) {
-	c.mu.Lock()
-	c.hp -= n
-	if c.hp < 0 {
-		c.hp = 0
-	}
-	dead := c.hp == 0
-	c.mu.Unlock()
-	if dead {
-		c.log.Info("player died")
-		c.sendEnvelope(protocol.TypeChat, protocol.ChatMessage{
-			From: "server", Text: "you died", TS: time.Now().UnixMilli(),
-		})
-		// Закрыть соединение.
-		select {
-		case <-c.done:
-		default:
-			close(c.done)
-		}
-	}
+	return c.state
 }
 
 func (c *Client) setState(s protocol.PlayerState) {
@@ -184,36 +159,11 @@ type Mammoth struct {
 	BornAt        time.Time
 }
 
-type Boat struct {
-	ID      string
-	Pos     protocol.Vector3
-	Yaw     float32
-	RiderID string
-}
-
 type House struct {
 	ID       string
 	Pos      protocol.Vector3
 	Yaw      float32
 	DoorOpen bool
-}
-
-type Mob struct {
-	ID           string
-	Pos          protocol.Vector3
-	HP           int
-	Kind         string // "hostile", "neutral", "friendly"
-	LastAttackAt time.Time
-}
-
-type Projectile struct {
-	ID         string
-	Pos        protocol.Vector3
-	Dir        protocol.Vector3
-	Speed      float32
-	OwnerMobID string
-	TargetID   string
-	SpawnAt    time.Time
 }
 
 type Server struct {
@@ -238,15 +188,6 @@ type Server struct {
 
 	housesMu sync.RWMutex
 	houses   map[string]*House
-
-	boatsMu sync.RWMutex
-	boats   map[string]*Boat
-
-	mobsMu sync.RWMutex
-	mobs   map[string]*Mob
-
-	projMu      sync.RWMutex
-	projectiles map[string]*Projectile
 
 	tick uint64
 
@@ -273,10 +214,6 @@ func New(addr string, tickRate int, log *slog.Logger, m *Metrics) *Server {
 	s.spawnWells(6)
 
 	s.houses = make(map[string]*House)
-	s.boats = make(map[string]*Boat)
-	s.mobs = make(map[string]*Mob)
-	s.spawnMobs(5)
-	s.projectiles = make(map[string]*Projectile)
 	return s
 }
 
@@ -289,17 +226,17 @@ func (s *Server) spawnResources(n int) {
 		v := float64(binary.BigEndian.Uint64(b[8:16])) / float64(^uint64(0))
 		theta := 2 * math.Pi * u
 		phi := math.Acos(2*v - 1)
-		x := float32(math.Sin(phi) * math.Cos(theta))
-		y := float32(math.Cos(phi))
-		z := float32(math.Sin(phi) * math.Sin(theta))
-		pos := protocol.ClampToSurface(protocol.Vector3{X: x, Y: y, Z: z})
+		r := float64(protocol.PlanetRadius) + 1.0
+		x := float32(math.Sin(phi) * math.Cos(theta) * r)
+		y := float32(math.Cos(phi) * r)
+		z := float32(math.Sin(phi) * math.Sin(theta) * r)
 
 		res := protocol.Resource{
 			ID:   newID(),
 			Type: resourceTypes[i%len(resourceTypes)],
-			X:    pos.X,
-			Y:    pos.Y,
-			Z:    pos.Z,
+			X:    x,
+			Y:    y,
+			Z:    z,
 		}
 		s.resources[res.ID] = res
 	}
@@ -537,438 +474,6 @@ func (s *Server) handleToggleDoor(c *Client, houseID string) {
 	c.log.Info("door toggled", "id", houseID, "open", open)
 }
 
-func (s *Server) handleSaddleMammoth(c *Client, mammothID string) {
-	ps := c.State()
-
-	s.mammothsMu.Lock()
-	m, ok := s.mammoths[mammothID]
-	if !ok {
-		s.mammothsMu.Unlock()
-		c.log.Warn("saddle: not found")
-		return
-	}
-	dx := float64(m.Pos.X - ps.X)
-	dy := float64(m.Pos.Y - ps.Y)
-	dz := float64(m.Pos.Z - ps.Z)
-	if dx*dx+dy*dy+dz*dz > 5.0*5.0 {
-		s.mammothsMu.Unlock()
-		c.log.Warn("saddle: too far")
-		return
-	}
-	if !m.Tamed {
-		s.mammothsMu.Unlock()
-		c.log.Warn("saddle: not tamed")
-		return
-	}
-	if m.Baby {
-		s.mammothsMu.Unlock()
-		c.log.Warn("saddle: baby")
-		return
-	}
-	if !m.Saddle {
-		// ставим: нужен предмет
-		if !c.consumeItem("saddle") {
-			s.mammothsMu.Unlock()
-			return
-		}
-		m.Saddle = true
-		s.mammothsMu.Unlock()
-		c.log.Info("saddle installed", "id", mammothID)
-	} else {
-		// снимаем
-		if m.RiderID != "" {
-			s.mammothsMu.Unlock()
-			c.log.Warn("saddle: rider on it")
-			return
-		}
-		m.Saddle = false
-		s.mammothsMu.Unlock()
-		c.addItem("saddle")
-		c.log.Info("saddle removed", "id", mammothID)
-	}
-
-	c.mu.Lock()
-	inv := make(map[string]int, len(c.inventory))
-	for k, v := range c.inventory {
-		inv[k] = v
-	}
-	c.mu.Unlock()
-	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
-}
-
-func (s *Server) handleRideMammoth(c *Client, mammothID string) {
-	ps := c.State()
-
-	s.mammothsMu.Lock()
-	for _, m := range s.mammoths {
-		if m.RiderID == c.ID {
-			m.RiderID = ""
-			s.mammothsMu.Unlock()
-			c.log.Info("dismounted")
-			return
-		}
-	}
-	if mammothID == "" {
-		s.mammothsMu.Unlock()
-		return
-	}
-	m, ok := s.mammoths[mammothID]
-	if !ok {
-		s.mammothsMu.Unlock()
-		c.log.Warn("ride: not found")
-		return
-	}
-	dx := float64(m.Pos.X - ps.X)
-	dy := float64(m.Pos.Y - ps.Y)
-	dz := float64(m.Pos.Z - ps.Z)
-	if dx*dx+dy*dy+dz*dz > 6.0*6.0 {
-		s.mammothsMu.Unlock()
-		c.log.Warn("ride: too far")
-		return
-	}
-	if !m.Tamed || !m.Saddle || m.RiderID != "" {
-		s.mammothsMu.Unlock()
-		c.log.Warn("ride: not ready")
-		return
-	}
-	m.RiderID = c.ID
-	s.mammothsMu.Unlock()
-	c.log.Info("mounted", "id", mammothID)
-}
-
-func (s *Server) handlePlaceBoat(c *Client, p protocol.PlaceBoat) {
-	// Проверка: точка на воде.
-	dir := protocol.Vector3{X: p.X, Y: p.Y, Z: p.Z}
-	l := float32(math.Sqrt(float64(dir.X*dir.X + dir.Y*dir.Y + dir.Z*dir.Z)))
-	if l < 0.01 {
-		return
-	}
-	nx, ny, nz := dir.X/l, dir.Y/l, dir.Z/l
-	th := protocol.TerrainHeight(nx, ny, nz)
-	if th >= protocol.SeaLevel {
-		c.log.Warn("boat: not on water")
-		return
-	}
-	if !c.consumeItem("boat") {
-		c.log.Warn("boat: no boat in inventory")
-		return
-	}
-	id := newID()
-	s.boatsMu.Lock()
-	s.boats[id] = &Boat{
-		ID: id,
-		Pos: protocol.Vector3{
-			X: nx * protocol.SeaLevel,
-			Y: ny * protocol.SeaLevel,
-			Z: nz * protocol.SeaLevel,
-		},
-		Yaw: p.Yaw,
-	}
-	s.boatsMu.Unlock()
-	c.log.Info("boat placed", "id", id)
-
-	c.mu.Lock()
-	inv := make(map[string]int, len(c.inventory))
-	for k, v := range c.inventory {
-		inv[k] = v
-	}
-	c.mu.Unlock()
-	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
-}
-
-func (s *Server) handleEnterBoat(c *Client, boatID string) {
-	ps := c.State()
-
-	// Если уже в лодке/на мамонте — сойти.
-	s.boatsMu.Lock()
-	for _, b := range s.boats {
-		if b.RiderID == c.ID {
-			b.RiderID = ""
-		}
-	}
-	s.mammothsMu.Lock()
-	for _, m := range s.mammoths {
-		if m.RiderID == c.ID {
-			m.RiderID = ""
-		}
-	}
-	s.mammothsMu.Unlock()
-
-	if boatID == "" {
-		s.boatsMu.Unlock()
-		c.log.Info("dismounted boat")
-		return
-	}
-
-	b, ok := s.boats[boatID]
-	if !ok {
-		s.boatsMu.Unlock()
-		c.log.Warn("boat: not found")
-		return
-	}
-	dx := float64(b.Pos.X - ps.X)
-	dy := float64(b.Pos.Y - ps.Y)
-	dz := float64(b.Pos.Z - ps.Z)
-	if dx*dx+dy*dy+dz*dz > 8.0*8.0 {
-		s.boatsMu.Unlock()
-		c.log.Warn("boat: too far")
-		return
-	}
-	if b.RiderID != "" {
-		s.boatsMu.Unlock()
-		c.log.Warn("boat: occupied")
-		return
-	}
-	b.RiderID = c.ID
-	s.boatsMu.Unlock()
-	c.log.Info("boat entered", "id", boatID)
-}
-
-func (s *Server) tickBoats() {
-	s.boatsMu.Lock()
-	defer s.boatsMu.Unlock()
-	for _, b := range s.boats {
-		if b.RiderID == "" {
-			continue
-		}
-		s.mu.RLock()
-		var rider *protocol.PlayerState
-		for _, c := range s.clients {
-			if c.ID == b.RiderID {
-				st := c.State()
-				rider = &st
-				break
-			}
-		}
-		s.mu.RUnlock()
-		if rider == nil {
-			b.RiderID = ""
-			continue
-		}
-		// Лодка плывёт точно под всадником, на уровне моря.
-		dir := protocol.Vector3{X: rider.X, Y: rider.Y, Z: rider.Z}
-		l := float32(math.Sqrt(float64(dir.X*dir.X + dir.Y*dir.Y + dir.Z*dir.Z)))
-		if l < 0.01 {
-			continue
-		}
-		nx, ny, nz := dir.X/l, dir.Y/l, dir.Z/l
-		b.Pos = protocol.Vector3{
-			X: nx * protocol.SeaLevel,
-			Y: ny * protocol.SeaLevel,
-			Z: nz * protocol.SeaLevel,
-		}
-	}
-}
-
-func (s *Server) spawnMobs(n int) {
-	for i := 0; i < n; i++ {
-		var b [16]byte
-		_, _ = rand.Read(b[:])
-		u := float64(binary.BigEndian.Uint64(b[0:8])) / float64(^uint64(0))
-		v := float64(binary.BigEndian.Uint64(b[8:16])) / float64(^uint64(0))
-		theta := 2 * math.Pi * u
-		phi := math.Acos(2*v - 1)
-		x := float32(math.Sin(phi) * math.Cos(theta))
-		y := float32(math.Cos(phi))
-		z := float32(math.Sin(phi) * math.Sin(theta))
-		pos := protocol.ClampToSurface(protocol.Vector3{X: x, Y: y, Z: z})
-		id := newID()
-		s.mobs[id] = &Mob{
-			ID:   id,
-			Pos:  pos,
-			HP:   1,
-			Kind: "hostile",
-		}
-	}
-	s.log.Info("spawned mobs", "count", n)
-}
-
-const mobAggroD2 = 15.0 * 15.0
-const mobAttackD2 = 2.5 * 2.5
-const mobSpeed = 5.0
-const mobAttackDamage = 10
-const mobAttackCooldown = 1 * time.Second
-
-func (s *Server) tickMobs(dt float32) {
-	s.mobsMu.Lock()
-	defer s.mobsMu.Unlock()
-
-	// Снимок игроков
-	type pInfo struct {
-		client *Client
-		state  protocol.PlayerState
-	}
-	s.mu.RLock()
-	players := make([]pInfo, 0, len(s.clients))
-	for _, c := range s.clients {
-		players = append(players, pInfo{client: c, state: c.State()})
-	}
-	s.mu.RUnlock()
-
-	now := time.Now()
-	for _, m := range s.mobs {
-		if m.Kind != "hostile" {
-			continue
-		}
-		var nearest *pInfo
-		minD2 := float32(mobAggroD2)
-		for i := range players {
-			dx := players[i].state.X - m.Pos.X
-			dy := players[i].state.Y - m.Pos.Y
-			dz := players[i].state.Z - m.Pos.Z
-			d2 := dx*dx + dy*dy + dz*dz
-			if d2 < minD2 {
-				minD2 = d2
-				nearest = &players[i]
-			}
-		}
-		if nearest == nil {
-			continue
-		}
-		// Атака — бросаем копьё-снаряд в игрока.
-		if minD2 < float32(mobAttackD2) {
-			if now.Sub(m.LastAttackAt) >= mobAttackCooldown {
-				m.LastAttackAt = now
-				// Направление на игрока.
-				dx := nearest.state.X - m.Pos.X
-				dy := nearest.state.Y - m.Pos.Y
-				dz := nearest.state.Z - m.Pos.Z
-				d := float32(math.Sqrt(float64(dx*dx + dy*dy + dz*dz)))
-				if d > 0.01 {
-					pid := newID()
-					s.projMu.Lock()
-					s.projectiles[pid] = &Projectile{
-						ID:         pid,
-						Pos:        m.Pos,
-						Dir:        protocol.Vector3{X: dx / d, Y: dy / d, Z: dz / d},
-						Speed:      25.0,
-						OwnerMobID: m.ID,
-						TargetID:   nearest.client.ID,
-						SpawnAt:    now,
-					}
-					s.projMu.Unlock()
-					s.log.Info("mob throws spear", "mob", m.ID, "target", nearest.client.ID)
-				}
-			}
-			continue
-		}
-		// Движение к игроку
-		dx := nearest.state.X - m.Pos.X
-		dy := nearest.state.Y - m.Pos.Y
-		dz := nearest.state.Z - m.Pos.Z
-		d := float32(math.Sqrt(float64(dx*dx + dy*dy + dz*dz)))
-		if d < 0.01 {
-			continue
-		}
-		m.Pos.X += (dx / d) * mobSpeed * dt
-		m.Pos.Y += (dy / d) * mobSpeed * dt
-		m.Pos.Z += (dz / d) * mobSpeed * dt
-		m.Pos = protocol.ClampToSurface(m.Pos)
-	}
-}
-
-func (s *Server) tickProjectiles(dt float32) {
-	now := time.Now()
-	const projTTL = 3 * time.Second
-	const projHitD2 = 1.5 * 1.5
-
-	s.projMu.Lock()
-	defer s.projMu.Unlock()
-
-	for id, p := range s.projectiles {
-		if now.Sub(p.SpawnAt) > projTTL {
-			delete(s.projectiles, id)
-			continue
-		}
-		p.Pos.X += p.Dir.X * p.Speed * dt
-		p.Pos.Y += p.Dir.Y * p.Speed * dt
-		p.Pos.Z += p.Dir.Z * p.Speed * dt
-
-		// Проверка попадания в целевого игрока.
-		s.mu.RLock()
-		var target *Client
-		for _, c := range s.clients {
-			if c.ID == p.TargetID {
-				target = c
-				break
-			}
-		}
-		s.mu.RUnlock()
-		if target == nil {
-			delete(s.projectiles, id)
-			continue
-		}
-		ps := target.State()
-		dx := ps.X - p.Pos.X
-		dy := ps.Y - p.Pos.Y
-		dz := ps.Z - p.Pos.Z
-		if dx*dx+dy*dy+dz*dz < projHitD2 {
-			target.damage(mobAttackDamage)
-			s.log.Info("mob spear hit", "target", p.TargetID, "dmg", mobAttackDamage)
-			delete(s.projectiles, id)
-		}
-	}
-}
-
-func (s *Server) handleHitMob(c *Client, mobID string) {
-	s.mobsMu.Lock()
-	m, ok := s.mobs[mobID]
-	if !ok {
-		s.mobsMu.Unlock()
-		c.log.Warn("hit mob: not found")
-		return
-	}
-	// Валидация: игрок рядом.
-	ps := c.State()
-	dx := float64(m.Pos.X - ps.X)
-	dy := float64(m.Pos.Y - ps.Y)
-	dz := float64(m.Pos.Z - ps.Z)
-	if dx*dx+dy*dy+dz*dz > 100.0*100.0 {
-		s.mobsMu.Unlock()
-		c.log.Warn("hit mob: too far")
-		return
-	}
-	if !c.consumeItem("spear") {
-		s.mobsMu.Unlock()
-		return
-	}
-	m.HP--
-	killed := m.HP <= 0
-	pos := m.Pos
-	if killed {
-		delete(s.mobs, mobID)
-	}
-	s.mobsMu.Unlock()
-
-	if killed {
-		// Дроп: 2 копья в точке смерти.
-		s.resourcesMu.Lock()
-		for i := 0; i < 2; i++ {
-			rid := newID()
-			s.resources[rid] = protocol.Resource{
-				ID:   rid,
-				Type: "spear",
-				X:    pos.X + float32(i)*1.2,
-				Y:    pos.Y,
-				Z:    pos.Z,
-			}
-		}
-		s.resourcesMu.Unlock()
-		c.log.Info("mob killed", "id", mobID)
-	} else {
-		c.log.Info("mob hit", "id", mobID, "hp", m.HP)
-	}
-
-	// Inventory update
-	c.mu.Lock()
-	inv := make(map[string]int, len(c.inventory))
-	for k, v := range c.inventory {
-		inv[k] = v
-	}
-	c.mu.Unlock()
-	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
-}
-
 func (s *Server) spawnWells(n int) {
 	for i := 0; i < n; i++ {
 		var b [16]byte
@@ -977,16 +482,13 @@ func (s *Server) spawnWells(n int) {
 		v := float64(binary.BigEndian.Uint64(b[8:16])) / float64(^uint64(0))
 		theta := 2 * math.Pi * u
 		phi := math.Acos(2*v - 1)
-		x := float32(math.Sin(phi) * math.Cos(theta))
-		y := float32(math.Cos(phi))
-		z := float32(math.Sin(phi) * math.Sin(theta))
-		pos := protocol.ClampToSurface(protocol.Vector3{X: x, Y: y, Z: z})
+		r := float64(protocol.PlanetRadius) + 2.0
 		id := newID()
 		s.wells[id] = &protocol.Well{
 			ID: id,
-			X:  pos.X,
-			Y:  pos.Y,
-			Z:  pos.Z,
+			X:  float32(math.Sin(phi) * math.Cos(theta) * r),
+			Y:  float32(math.Cos(phi) * r),
+			Z:  float32(math.Sin(phi) * math.Sin(theta) * r),
 		}
 	}
 	s.log.Info("spawned wells", "count", n)
@@ -1084,7 +586,14 @@ func (s *Server) tickMammoths(dt float32) {
 					m.Pos.X += (dx / d) * followSpeed * dt
 					m.Pos.Y += (dy / d) * followSpeed * dt
 					m.Pos.Z += (dz / d) * followSpeed * dt
-					m.Pos = protocol.ClampToSurface(m.Pos)
+					rl := float32(math.Sqrt(float64(
+						m.Pos.X*m.Pos.X + m.Pos.Y*m.Pos.Y + m.Pos.Z*m.Pos.Z)))
+					if rl > 0.01 {
+						scale := float32(mammothR) / rl
+						m.Pos.X *= scale
+						m.Pos.Y *= scale
+						m.Pos.Z *= scale
+					}
 				}
 			}
 			continue
@@ -1158,8 +667,10 @@ func (s *Server) tickMammoths(dt float32) {
 		if rl < 0.01 {
 			continue
 		}
-		_ = mammothR
-		m.Pos = protocol.ClampToSurface(m.Pos)
+		scale := float32(mammothR) / rl
+		m.Pos.X *= scale
+		m.Pos.Y *= scale
+		m.Pos.Z *= scale
 	}
 }
 
@@ -1381,7 +892,6 @@ func (s *Server) handleCraft(c *Client, recipe string) {
 		"leash":  {need: req{"liana": 2}, have: req{"leash": 1}},
 		"house":  {need: req{"wood": 50}, have: req{"house": 1}},
 		"saddle": {need: req{"liana": 4}, have: req{"saddle": 1}},
-		"boat":   {need: req{"wood": 20}, have: req{"boat": 1}},
 	}
 	r, ok := recipes[recipe]
 	if !ok {
@@ -1580,17 +1090,6 @@ func (s *Server) handleMessage(c *Client, env *protocol.Envelope) {
 		}
 		st.ID = c.ID
 		st.Nick = c.Nick
-		pos := protocol.ClampToSurface(protocol.Vector3{X: st.X, Y: st.Y, Z: st.Z})
-		l := float32(math.Sqrt(float64(pos.X*pos.X + pos.Y*pos.Y + pos.Z*pos.Z)))
-		if l > 0.01 {
-			h := (l + protocol.PlayerHeight) / l
-			pos.X *= h
-			pos.Y *= h
-			pos.Z *= h
-		}
-		st.X = pos.X
-		st.Y = pos.Y
-		st.Z = pos.Z
 		c.setState(st)
 	case protocol.TypeChat:
 		var cm protocol.ChatMessage
@@ -1728,36 +1227,6 @@ func (s *Server) handleMessage(c *Client, env *protocol.Envelope) {
 			return
 		}
 		s.handleToggleDoor(c, p.HouseID)
-	case protocol.TypeSaddleMammoth:
-		var p protocol.SaddleMammoth
-		if err := env.Decode(&p); err != nil {
-			return
-		}
-		s.handleSaddleMammoth(c, p.MammothID)
-	case protocol.TypeRideMammoth:
-		var p protocol.RideMammoth
-		if err := env.Decode(&p); err != nil {
-			return
-		}
-		s.handleRideMammoth(c, p.MammothID)
-	case protocol.TypePlaceBoat:
-		var p protocol.PlaceBoat
-		if err := env.Decode(&p); err != nil {
-			return
-		}
-		s.handlePlaceBoat(c, p)
-	case protocol.TypeEnterBoat:
-		var p protocol.EnterBoat
-		if err := env.Decode(&p); err != nil {
-			return
-		}
-		s.handleEnterBoat(c, p.BoatID)
-	case protocol.TypeHitMob:
-		var p protocol.HitMob
-		if err := env.Decode(&p); err != nil {
-			return
-		}
-		s.handleHitMob(c, p.MobID)
 	}
 }
 
@@ -1813,9 +1282,6 @@ func (s *Server) tickLoop() {
 			s.metrics.TicksTotal.Inc()
 			s.tickHunger(1.0 / float64(s.tickRate))
 			s.tickMammoths(float32(1.0 / float64(s.tickRate)))
-			s.tickBoats()
-			s.tickMobs(float32(1.0 / float64(s.tickRate)))
-			s.tickProjectiles(float32(1.0 / float64(s.tickRate)))
 			s.tickBreeding()
 			s.tickResources()
 			s.broadcastSnapshot()
@@ -1886,49 +1352,6 @@ func (s *Server) broadcastSnapshot() {
 	}
 	s.wellsMu.RUnlock()
 
-	s.projMu.RLock()
-	projs := make([]protocol.MobProjectile, 0, len(s.projectiles))
-	for _, p := range s.projectiles {
-		projs = append(projs, protocol.MobProjectile{
-			ID: p.ID,
-			X:  p.Pos.X,
-			Y:  p.Pos.Y,
-			Z:  p.Pos.Z,
-			DX: p.Dir.X,
-			DY: p.Dir.Y,
-			DZ: p.Dir.Z,
-		})
-	}
-	s.projMu.RUnlock()
-
-	s.mobsMu.RLock()
-	mobs := make([]protocol.Mob, 0, len(s.mobs))
-	for _, m := range s.mobs {
-		mobs = append(mobs, protocol.Mob{
-			ID:   m.ID,
-			X:    m.Pos.X,
-			Y:    m.Pos.Y,
-			Z:    m.Pos.Z,
-			HP:   m.HP,
-			Kind: m.Kind,
-		})
-	}
-	s.mobsMu.RUnlock()
-
-	s.boatsMu.RLock()
-	boats := make([]protocol.Boat, 0, len(s.boats))
-	for _, b := range s.boats {
-		boats = append(boats, protocol.Boat{
-			ID:      b.ID,
-			X:       b.Pos.X,
-			Y:       b.Pos.Y,
-			Z:       b.Pos.Z,
-			Yaw:     b.Yaw,
-			RiderID: b.RiderID,
-		})
-	}
-	s.boatsMu.RUnlock()
-
 	s.housesMu.RLock()
 	houses := make([]protocol.House, 0, len(s.houses))
 	for _, h := range s.houses {
@@ -1947,32 +1370,26 @@ func (s *Server) broadcastSnapshot() {
 	mammoths := make([]protocol.Mammoth, 0, len(s.mammoths))
 	for _, m := range s.mammoths {
 		mammoths = append(mammoths, protocol.Mammoth{
-			ID:        m.ID,
-			X:         m.Pos.X,
-			Y:         m.Pos.Y,
-			Z:         m.Pos.Z,
-			HP:        m.HP,
-			Tamed:     m.Tamed,
-			Sex:       m.Sex,
-			FedCount:  m.FedCount,
-			Baby:      m.Baby,
-			LeashedTo: m.LeashedTo,
-			Saddle:    m.Saddle,
-			RiderID:   m.RiderID,
+			ID:       m.ID,
+			X:        m.Pos.X,
+			Y:        m.Pos.Y,
+			Z:        m.Pos.Z,
+			HP:       m.HP,
+			Tamed:    m.Tamed,
+			Sex:      m.Sex,
+			FedCount: m.FedCount,
+			Baby:     m.Baby,
 		})
 	}
 	s.mammothsMu.RUnlock()
 
 	env, err := protocol.NewEnvelope(protocol.TypeSnapshot, protocol.Snapshot{
-		Tick:        s.tick,
-		Players:     players,
-		Resources:   resources,
-		Mammoths:    mammoths,
-		Wells:       wells,
-		Houses:      houses,
-		Boats:       boats,
-		Mobs:        mobs,
-		Projectiles: projs,
+		Tick:      s.tick,
+		Players:   players,
+		Resources: resources,
+		Mammoths:  mammoths,
+		Wells:     wells,
+		Houses:    houses,
 	})
 	if err != nil {
 		return

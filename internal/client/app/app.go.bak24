@@ -67,10 +67,6 @@ type App struct {
 
 	lastKeys     string
 	lastSentHeld string
-	ridingID     string
-	hp           int
-	hpReceived   bool
-	boatID       string
 	lastMouse    string
 	lastLogAt    time.Time
 	lastPos      rl.Vector3
@@ -78,7 +74,6 @@ type App struct {
 
 func New(cfg *config.Config, log *slog.Logger) *App {
 	return &App{
-		hp:       100,
 		cfg:      cfg,
 		log:      log,
 		mode:     state.ModeMenu,
@@ -192,13 +187,6 @@ func (a *App) updateMenu() {
 }
 
 func (a *App) updatePlaying(dt float32) {
-	// Обновляем HP из сети.
-	if a.nc != nil {
-		if hp := a.nc.OwnHP(); hp > 0 || a.hpReceived {
-			a.hp = hp
-			a.hpReceived = true
-		}
-	}
 	if a.chat.Open {
 		a.setCursorCaptured(false)
 		if text, ok := a.chat.Update(); ok && text != "" {
@@ -267,39 +255,6 @@ func (a *App) updatePlaying(dt float32) {
 	if rl.IsKeyPressed(rl.KeyF) {
 		a.tryPickup()
 	}
-
-	// E — сесть/встать с мамонта или лодки.
-	if rl.IsKeyPressed(rl.KeyE) && a.flight != nil {
-		if a.ridingID != "" {
-			if err := a.nc.RideMammoth(""); err != nil {
-				a.log.Warn("ride", "err", err)
-			}
-			a.ridingID = ""
-			a.flight.Riding = false
-			a.log.Info("dismount sent")
-		} else if a.boatID != "" {
-			if err := a.nc.EnterBoat(""); err != nil {
-				a.log.Warn("boat exit", "err", err)
-			}
-			a.boatID = ""
-			a.flight.InBoat = false
-			a.log.Info("boat exit sent")
-		} else if id := a.saddledMammothNearby(); id != "" {
-			if err := a.nc.RideMammoth(id); err != nil {
-				a.log.Warn("ride", "err", err)
-			}
-			a.ridingID = id
-			a.flight.Riding = true
-			a.log.Info("mount sent", "id", id)
-		} else if id := a.boatNearby(); id != "" {
-			if err := a.nc.EnterBoat(id); err != nil {
-				a.log.Warn("boat enter", "err", err)
-			}
-			a.boatID = id
-			a.flight.InBoat = true
-			a.log.Info("boat enter sent", "id", id)
-		}
-	}
 	// ЛКМ — действие зависит от того, что в руке.
 	if rl.IsMouseButtonPressed(rl.MouseLeftButton) && a.flight != nil {
 		// Приоритет: источник пресной воды. Клик по нему всегда даёт воду.
@@ -365,44 +320,15 @@ func (a *App) updatePlaying(dt float32) {
 				a.log.Warn("place house", "err", err)
 			}
 			a.log.Info("place house sent (LMB)")
-		case "boat":
-			// Поставить лодку в 5 юнитах перед собой (только на воду).
-			fw := a.flight.Forward()
-			pos := rl.Vector3Add(a.camera.Position, rl.Vector3Scale(fw, 5.0))
-			yaw := float32(math.Atan2(float64(fw.X), float64(fw.Z)))
-			if err := a.nc.PlaceBoat(pos.X, pos.Y, pos.Z, yaw); err != nil {
-				a.log.Warn("place boat", "err", err)
-			}
-			a.log.Info("place boat sent (LMB)")
-		case "saddle":
-			if id := a.mammothInReach(); id != "" {
-				if err := a.nc.SaddleMammoth(id); err != nil {
-					a.log.Warn("saddle mammoth", "err", err)
-				}
-				a.log.Info("saddle mammoth sent (LMB)", "id", id)
-			} else {
-				a.log.Info("saddle: no mammoth in reach")
-			}
 		case "":
 			if id := a.houseInSight(); id != "" {
 				if err := a.nc.ToggleDoor(id); err != nil {
 					a.log.Warn("toggle door", "err", err)
 				}
 				a.log.Info("toggle door sent (LMB)", "id", id)
-			} else if id := a.saddledMammothNearby(); id != "" {
-				if err := a.nc.SaddleMammoth(id); err != nil {
-					a.log.Warn("unsaddle mammoth", "err", err)
-				}
-				a.log.Info("unsaddle mammoth sent (LMB)", "id", id)
 			}
 		}
 	afterLMB:
-	}
-	// Смерть → меню (только если уже получали HP из сети).
-	if a.hpReceived && a.myHP() <= 0 {
-		a.log.Info("player HP zero, returning to menu")
-		a.mode = state.ModeMenu
-		return
 	}
 	if rl.IsKeyPressed(rl.KeyEscape) {
 		a.mode = state.ModePaused
@@ -521,15 +447,11 @@ func (a *App) draw() {
 		rl.ClearBackground(rl.NewColor(4, 4, 12, 255))
 		rl.BeginMode3D(a.camera)
 		a.scene.Draw()
-		a.scene.DrawWater()
 		render.DrawPlayers(a.nc.InterpolatedSnapshot(), a.nc.PlayerID(), a.camera)
 		render.DrawResources(a.nc.Resources())
 		render.DrawMammoths(a.nc.Mammoths())
 		render.DrawWells(a.nc.Wells())
 		render.DrawHouses(a.nc.Houses())
-		render.DrawBoats(a.nc.Boats())
-		render.DrawMobs(a.nc.Mobs())
-		render.DrawProjectiles(a.nc.Projectiles())
 		me := a.nc.PlayerID()
 		if me != "" {
 			for _, m := range a.nc.Mammoths() {
@@ -828,20 +750,6 @@ func (a *App) drawHUD() {
 	if a.flight != nil && a.flight.Mode == input.ModeSurvival {
 		a.drawHotbar()
 	}
-	// HP bar.
-	hpVal := a.myHP()
-	hpBarW := float32(200)
-	hpBarH := float32(16)
-	hpBarX := int32(20)
-	hpBarY := int32(60)
-	rl.DrawRectangle(hpBarX, hpBarY, int32(hpBarW), int32(hpBarH), rl.NewColor(60, 20, 20, 200))
-	hpFill := hpBarW * float32(hpVal) / 100.0
-	if hpFill < 0 {
-		hpFill = 0
-	}
-	rl.DrawRectangle(hpBarX, hpBarY, int32(hpFill), int32(hpBarH), rl.NewColor(200, 40, 40, 255))
-	rl.DrawRectangleLines(hpBarX, hpBarY, int32(hpBarW), int32(hpBarH), rl.Black)
-	fonts.Draw(fmt.Sprintf("HP: %d", hpVal), hpBarX+int32(hpBarW)+8, hpBarY, 16, rl.RayWhite)
 }
 
 // drawHotbar — первая строка инвентаря внизу по центру.
@@ -864,7 +772,7 @@ func (a *App) drawHotbar() {
 	// Соберём первую строку из инвентаря
 	items := []string{}
 	inv := a.nc.Inventory()
-	for _, t := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch", "water", "liana", "leash", "house", "saddle", "boat"} {
+	for _, t := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch", "water", "liana", "leash", "house"} {
 		if n, ok := inv[t]; ok && n > 0 {
 			items = append(items, t)
 		}
@@ -914,7 +822,6 @@ func (a *App) startConnect() {
 		a.log.Warn("connect failed", "err", err)
 		return
 	}
-	a.hp = 100
 	a.log.Info("connected", "took", time.Since(start).String())
 
 	spawn := render.SpawnFromID(welcome.PlayerID)
@@ -1025,80 +932,6 @@ func (a *App) wellInSight() string {
 
 // mammothInReach возвращает ID ближайшего мамонта в радиусе 5 юнитов
 // и в конусе взгляда.
-// houseInSight возвращает ID ближайшего дома в радиусе 6 юнитов.
-func (a *App) houseInSight() string {
-	hs := a.nc.Houses()
-	cam := a.camera.Position
-	var bestID string
-	bestD2 := float32(36.0)
-	for _, h := range hs {
-		dx := h.X - cam.X
-		dy := h.Y - cam.Y
-		dz := h.Z - cam.Z
-		d2 := dx*dx + dy*dy + dz*dz
-		if d2 < bestD2 {
-			bestD2 = d2
-			bestID = h.ID
-		}
-	}
-	return bestID
-}
-
-// placeForward возвращает точку перед игроком и её yaw.
-func (a *App) placeForward(dist float32) (x, y, z, yaw float32) {
-	fw := a.flight.Forward()
-	pos := rl.Vector3Add(a.camera.Position, rl.Vector3Scale(fw, dist))
-	yaw = float32(math.Atan2(float64(fw.X), float64(fw.Z)))
-	return pos.X, pos.Y, pos.Z, yaw
-}
-
-func (a *App) boatNearby() string {
-	bs := a.nc.Boats()
-	cam := a.camera.Position
-	me := a.nc.PlayerID()
-	var bestID string
-	bestD2 := float32(64.0)
-	for _, b := range bs {
-		if b.RiderID != "" && b.RiderID != me {
-			continue
-		}
-		dx := b.X - cam.X
-		dy := b.Y - cam.Y
-		dz := b.Z - cam.Z
-		d2 := dx*dx + dy*dy + dz*dz
-		if d2 < bestD2 {
-			bestD2 = d2
-			bestID = b.ID
-		}
-	}
-	return bestID
-}
-
-func (a *App) saddledMammothNearby() string {
-	ms := a.nc.Mammoths()
-	cam := a.camera.Position
-	me := a.nc.PlayerID()
-	var bestID string
-	bestD2 := float32(36.0)
-	for _, m := range ms {
-		if !m.Saddle {
-			continue
-		}
-		if m.RiderID != "" && m.RiderID != me {
-			continue
-		}
-		dx := m.X - cam.X
-		dy := m.Y - cam.Y
-		dz := m.Z - cam.Z
-		d2 := dx*dx + dy*dy + dz*dz
-		if d2 < bestD2 {
-			bestD2 = d2
-			bestID = m.ID
-		}
-	}
-	return bestID
-}
-
 func (a *App) mammothInReach() string {
 	ms := a.nc.Mammoths()
 	cam := a.camera.Position
@@ -1215,7 +1048,7 @@ func (a *App) drawInventory() {
 	}
 	items := []slot{}
 	inv := a.nc.Inventory()
-	for _, t := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch", "water", "liana", "leash", "house", "saddle", "boat"} {
+	for _, t := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch", "water", "liana", "leash", "house"} {
 		if n, ok := inv[t]; ok && n > 0 {
 			items = append(items, slot{t, n})
 		}
@@ -1294,10 +1127,6 @@ func itemColor(typ string) rl.Color {
 		return rl.NewColor(160, 120, 70, 255)
 	case "house":
 		return rl.NewColor(140, 95, 55, 255)
-	case "saddle":
-		return rl.NewColor(90, 60, 40, 255)
-	case "boat":
-		return rl.NewColor(120, 80, 40, 255)
 	case "wood":
 		return rl.NewColor(120, 80, 40, 255)
 	case "ore":
@@ -1339,10 +1168,6 @@ func itemName(typ string) string {
 		return "Leash"
 	case "house":
 		return "House"
-	case "saddle":
-		return "Saddle"
-	case "boat":
-		return "Boat"
 	}
 	return typ
 }
@@ -1361,8 +1186,6 @@ var craftRecipes = []craftRecipe{
 	{id: "torch", name: "Torch", out: "torch", req: map[string]int{"stone": 1, "wood": 1}},
 	{id: "leash", name: "Leash", out: "leash", req: map[string]int{"liana": 2}},
 	{id: "house", name: "House", out: "house", req: map[string]int{"wood": 50}},
-	{id: "saddle", name: "Saddle", out: "saddle", req: map[string]int{"liana": 4}},
-	{id: "boat", name: "Boat", out: "boat", req: map[string]int{"wood": 20}},
 }
 
 // drawCraft — окно крафта со списком рецептов.
@@ -1407,7 +1230,7 @@ func (a *App) drawCraft() {
 		// требования
 		reqText := ""
 		canCraft := true
-		for _, k := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch", "water", "liana", "leash", "house", "saddle", "boat"} {
+		for _, k := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch", "water", "liana", "leash", "house"} {
 			if need, ok := rec.req[k]; ok {
 				have := inv[k]
 				reqText += fmt.Sprintf("%s %d/%d   ", k, have, need)
@@ -1443,7 +1266,7 @@ func (a *App) drawHeldItem() {
 	// Найдём предмет в selectedSlot
 	items := []string{}
 	inv := a.nc.Inventory()
-	for _, t := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch", "water", "liana", "leash", "house", "saddle", "boat"} {
+	for _, t := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch", "water", "liana", "leash", "house"} {
 		if n, ok := inv[t]; ok && n > 0 {
 			items = append(items, t)
 		}
@@ -1471,14 +1294,10 @@ func (a *App) drawHeldItem() {
 }
 
 // heldItem возвращает тип предмета в selectedSlot (пустая строка — ничего).
-func (a *App) myHP() int {
-	return a.hp
-}
-
 func (a *App) heldItem() string {
 	inv := a.nc.Inventory()
 	items := []string{}
-	for _, t := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch", "water", "liana", "leash", "house", "saddle", "boat"} {
+	for _, t := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch", "water", "liana", "leash", "house"} {
 		if n, ok := inv[t]; ok && n > 0 {
 			items = append(items, t)
 		}

@@ -37,7 +37,6 @@ const (
 	TypeRideMammoth     Type = "ride_mammoth"
 	TypePlaceBoat       Type = "place_boat"
 	TypeEnterBoat       Type = "enter_boat"
-	TypeHitMob          Type = "hit_mob"
 )
 
 type Envelope struct {
@@ -81,7 +80,6 @@ type PlayerState struct {
 	Yaw    float32 `json:"yaw"`
 	Pitch  float32 `json:"pitch"`
 	Hunger float32 `json:"hunger"`
-	HP     int     `json:"hp"`
 }
 
 type Resource struct {
@@ -110,38 +108,13 @@ type Mammoth struct {
 }
 
 type Snapshot struct {
-	Tick        uint64          `json:"tick"`
-	Players     []PlayerState   `json:"players"`
-	Resources   []Resource      `json:"resources"`
-	Mammoths    []Mammoth       `json:"mammoths"`
-	Wells       []Well          `json:"wells"`
-	Houses      []House         `json:"houses"`
-	Boats       []Boat          `json:"boats"`
-	Mobs        []Mob           `json:"mobs"`
-	Projectiles []MobProjectile `json:"projectiles"`
-}
-
-type MobProjectile struct {
-	ID string  `json:"id"`
-	X  float32 `json:"x"`
-	Y  float32 `json:"y"`
-	Z  float32 `json:"z"`
-	DX float32 `json:"dx"`
-	DY float32 `json:"dy"`
-	DZ float32 `json:"dz"`
-}
-
-type HitMob struct {
-	MobID string `json:"mob_id"`
-}
-
-type Mob struct {
-	ID   string  `json:"id"`
-	X    float32 `json:"x"`
-	Y    float32 `json:"y"`
-	Z    float32 `json:"z"`
-	HP   int     `json:"hp"`
-	Kind string  `json:"kind"`
+	Tick      uint64        `json:"tick"`
+	Players   []PlayerState `json:"players"`
+	Resources []Resource    `json:"resources"`
+	Mammoths  []Mammoth     `json:"mammoths"`
+	Wells     []Well        `json:"wells"`
+	Houses    []House       `json:"houses"`
+	Boats     []Boat        `json:"boats"`
 }
 
 type Boat struct {

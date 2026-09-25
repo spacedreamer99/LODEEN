@@ -69,19 +69,11 @@ func (c *Client) damage(n int) {
 		c.hp = 0
 	}
 	dead := c.hp == 0
-	c.mu.Unlock()
 	if dead {
-		c.log.Info("player died")
-		c.sendEnvelope(protocol.TypeChat, protocol.ChatMessage{
-			From: "server", Text: "you died", TS: time.Now().UnixMilli(),
-		})
-		// Закрыть соединение.
-		select {
-		case <-c.done:
-		default:
-			close(c.done)
-		}
+		c.hp = 100
 	}
+	c.mu.Unlock()
+	_ = dead
 }
 
 func (c *Client) setState(s protocol.PlayerState) {
@@ -206,16 +198,6 @@ type Mob struct {
 	LastAttackAt time.Time
 }
 
-type Projectile struct {
-	ID         string
-	Pos        protocol.Vector3
-	Dir        protocol.Vector3
-	Speed      float32
-	OwnerMobID string
-	TargetID   string
-	SpawnAt    time.Time
-}
-
 type Server struct {
 	addr     string
 	tickRate int
@@ -245,9 +227,6 @@ type Server struct {
 	mobsMu sync.RWMutex
 	mobs   map[string]*Mob
 
-	projMu      sync.RWMutex
-	projectiles map[string]*Projectile
-
 	tick uint64
 
 	wg        sync.WaitGroup
@@ -276,7 +255,6 @@ func New(addr string, tickRate int, log *slog.Logger, m *Metrics) *Server {
 	s.boats = make(map[string]*Boat)
 	s.mobs = make(map[string]*Mob)
 	s.spawnMobs(5)
-	s.projectiles = make(map[string]*Projectile)
 	return s
 }
 
@@ -776,7 +754,7 @@ func (s *Server) spawnMobs(n int) {
 		s.mobs[id] = &Mob{
 			ID:   id,
 			Pos:  pos,
-			HP:   1,
+			HP:   30,
 			Kind: "hostile",
 		}
 	}
@@ -825,30 +803,13 @@ func (s *Server) tickMobs(dt float32) {
 		if nearest == nil {
 			continue
 		}
-		// Атака — бросаем копьё-снаряд в игрока.
+		// Атака
 		if minD2 < float32(mobAttackD2) {
 			if now.Sub(m.LastAttackAt) >= mobAttackCooldown {
 				m.LastAttackAt = now
-				// Направление на игрока.
-				dx := nearest.state.X - m.Pos.X
-				dy := nearest.state.Y - m.Pos.Y
-				dz := nearest.state.Z - m.Pos.Z
-				d := float32(math.Sqrt(float64(dx*dx + dy*dy + dz*dz)))
-				if d > 0.01 {
-					pid := newID()
-					s.projMu.Lock()
-					s.projectiles[pid] = &Projectile{
-						ID:         pid,
-						Pos:        m.Pos,
-						Dir:        protocol.Vector3{X: dx / d, Y: dy / d, Z: dz / d},
-						Speed:      25.0,
-						OwnerMobID: m.ID,
-						TargetID:   nearest.client.ID,
-						SpawnAt:    now,
-					}
-					s.projMu.Unlock()
-					s.log.Info("mob throws spear", "mob", m.ID, "target", nearest.client.ID)
-				}
+				nearest.client.damage(mobAttackDamage)
+				s.log.Info("mob attack", "mob", m.ID, "player", nearest.client.ID,
+					"dmg", mobAttackDamage)
 			}
 			continue
 		}
@@ -865,108 +826,6 @@ func (s *Server) tickMobs(dt float32) {
 		m.Pos.Z += (dz / d) * mobSpeed * dt
 		m.Pos = protocol.ClampToSurface(m.Pos)
 	}
-}
-
-func (s *Server) tickProjectiles(dt float32) {
-	now := time.Now()
-	const projTTL = 3 * time.Second
-	const projHitD2 = 1.5 * 1.5
-
-	s.projMu.Lock()
-	defer s.projMu.Unlock()
-
-	for id, p := range s.projectiles {
-		if now.Sub(p.SpawnAt) > projTTL {
-			delete(s.projectiles, id)
-			continue
-		}
-		p.Pos.X += p.Dir.X * p.Speed * dt
-		p.Pos.Y += p.Dir.Y * p.Speed * dt
-		p.Pos.Z += p.Dir.Z * p.Speed * dt
-
-		// Проверка попадания в целевого игрока.
-		s.mu.RLock()
-		var target *Client
-		for _, c := range s.clients {
-			if c.ID == p.TargetID {
-				target = c
-				break
-			}
-		}
-		s.mu.RUnlock()
-		if target == nil {
-			delete(s.projectiles, id)
-			continue
-		}
-		ps := target.State()
-		dx := ps.X - p.Pos.X
-		dy := ps.Y - p.Pos.Y
-		dz := ps.Z - p.Pos.Z
-		if dx*dx+dy*dy+dz*dz < projHitD2 {
-			target.damage(mobAttackDamage)
-			s.log.Info("mob spear hit", "target", p.TargetID, "dmg", mobAttackDamage)
-			delete(s.projectiles, id)
-		}
-	}
-}
-
-func (s *Server) handleHitMob(c *Client, mobID string) {
-	s.mobsMu.Lock()
-	m, ok := s.mobs[mobID]
-	if !ok {
-		s.mobsMu.Unlock()
-		c.log.Warn("hit mob: not found")
-		return
-	}
-	// Валидация: игрок рядом.
-	ps := c.State()
-	dx := float64(m.Pos.X - ps.X)
-	dy := float64(m.Pos.Y - ps.Y)
-	dz := float64(m.Pos.Z - ps.Z)
-	if dx*dx+dy*dy+dz*dz > 100.0*100.0 {
-		s.mobsMu.Unlock()
-		c.log.Warn("hit mob: too far")
-		return
-	}
-	if !c.consumeItem("spear") {
-		s.mobsMu.Unlock()
-		return
-	}
-	m.HP--
-	killed := m.HP <= 0
-	pos := m.Pos
-	if killed {
-		delete(s.mobs, mobID)
-	}
-	s.mobsMu.Unlock()
-
-	if killed {
-		// Дроп: 2 копья в точке смерти.
-		s.resourcesMu.Lock()
-		for i := 0; i < 2; i++ {
-			rid := newID()
-			s.resources[rid] = protocol.Resource{
-				ID:   rid,
-				Type: "spear",
-				X:    pos.X + float32(i)*1.2,
-				Y:    pos.Y,
-				Z:    pos.Z,
-			}
-		}
-		s.resourcesMu.Unlock()
-		c.log.Info("mob killed", "id", mobID)
-	} else {
-		c.log.Info("mob hit", "id", mobID, "hp", m.HP)
-	}
-
-	// Inventory update
-	c.mu.Lock()
-	inv := make(map[string]int, len(c.inventory))
-	for k, v := range c.inventory {
-		inv[k] = v
-	}
-	c.mu.Unlock()
-	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
 }
 
 func (s *Server) spawnWells(n int) {
@@ -1752,12 +1611,6 @@ func (s *Server) handleMessage(c *Client, env *protocol.Envelope) {
 			return
 		}
 		s.handleEnterBoat(c, p.BoatID)
-	case protocol.TypeHitMob:
-		var p protocol.HitMob
-		if err := env.Decode(&p); err != nil {
-			return
-		}
-		s.handleHitMob(c, p.MobID)
 	}
 }
 
@@ -1815,7 +1668,6 @@ func (s *Server) tickLoop() {
 			s.tickMammoths(float32(1.0 / float64(s.tickRate)))
 			s.tickBoats()
 			s.tickMobs(float32(1.0 / float64(s.tickRate)))
-			s.tickProjectiles(float32(1.0 / float64(s.tickRate)))
 			s.tickBreeding()
 			s.tickResources()
 			s.broadcastSnapshot()
@@ -1886,21 +1738,6 @@ func (s *Server) broadcastSnapshot() {
 	}
 	s.wellsMu.RUnlock()
 
-	s.projMu.RLock()
-	projs := make([]protocol.MobProjectile, 0, len(s.projectiles))
-	for _, p := range s.projectiles {
-		projs = append(projs, protocol.MobProjectile{
-			ID: p.ID,
-			X:  p.Pos.X,
-			Y:  p.Pos.Y,
-			Z:  p.Pos.Z,
-			DX: p.Dir.X,
-			DY: p.Dir.Y,
-			DZ: p.Dir.Z,
-		})
-	}
-	s.projMu.RUnlock()
-
 	s.mobsMu.RLock()
 	mobs := make([]protocol.Mob, 0, len(s.mobs))
 	for _, m := range s.mobs {
@@ -1964,15 +1801,14 @@ func (s *Server) broadcastSnapshot() {
 	s.mammothsMu.RUnlock()
 
 	env, err := protocol.NewEnvelope(protocol.TypeSnapshot, protocol.Snapshot{
-		Tick:        s.tick,
-		Players:     players,
-		Resources:   resources,
-		Mammoths:    mammoths,
-		Wells:       wells,
-		Houses:      houses,
-		Boats:       boats,
-		Mobs:        mobs,
-		Projectiles: projs,
+		Tick:      s.tick,
+		Players:   players,
+		Resources: resources,
+		Mammoths:  mammoths,
+		Wells:     wells,
+		Houses:    houses,
+		Boats:     boats,
+		Mobs:      mobs,
 	})
 	if err != nil {
 		return

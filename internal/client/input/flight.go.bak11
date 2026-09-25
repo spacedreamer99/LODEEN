@@ -145,28 +145,65 @@ func (f *FlightController) updateSurvival(dt float32) {
 		jumpSpeed = 16.0
 		groundEps = 0.5
 	)
-	oldPos := f.Pos
-	dir := rl.Vector3Normalize(f.Pos)
-	th := protocol.TerrainHeight(dir.X, dir.Y, dir.Z)
-	overWater := th < protocol.SeaLevel // над водой или на воде
-	swimming := overWater && !f.InBoat  // пешком в воде
-
 	ws := float32(walkSpeed)
-	switch {
-	case f.Riding:
-		// На мамонте — быстро.
+	if f.Riding {
 		ws *= 2.5
-	case f.InBoat && overWater:
-		// На лодке по воде — быстро.
-		ws *= 2.0
-	case f.InBoat && !overWater:
-		// На лодке по суше — очень медленно.
-		ws *= 0.15
-	case swimming:
-		// Пешком в воде — медленно.
-		ws *= 0.35
 	}
+	oldPos := f.Pos
 
+	dir := rl.Vector3Normalize(f.Pos)
+	// Запрет заходить в воду без лодки.
+	th := protocol.TerrainHeight(dir.X, dir.Y, dir.Z)
+	if th < protocol.SeaLevel && !f.InBoat {
+		// Если игрок уже в воде — выталкиваем на берег (в направлении,
+		// где поверхность выше уровня моря).
+		thOld := protocol.TerrainHeight(
+			rl.Vector3Normalize(oldPos).X,
+			rl.Vector3Normalize(oldPos).Y,
+			rl.Vector3Normalize(oldPos).Z)
+
+		if thOld < protocol.SeaLevel {
+			// Ищем ближайший выход: пробуем 8 сторон света.
+			bestPos := f.Pos
+			bestH := thOld
+			up := rl.Vector3Normalize(f.Pos)
+			// касательные оси
+			right := rl.Vector3Normalize(rl.Vector3CrossProduct(up, rl.NewVector3(0, 1, 0)))
+			if rl.Vector3Length(right) < 0.01 {
+				right = rl.Vector3Normalize(rl.Vector3CrossProduct(up, rl.NewVector3(1, 0, 0)))
+			}
+			fwd := rl.Vector3CrossProduct(right, up)
+			for _, dist := range []float32{1, 2, 4, 8, 16} {
+				for _, d := range []rl.Vector3{
+					fwd, rl.Vector3Scale(fwd, -1),
+					right, rl.Vector3Scale(right, -1),
+					rl.Vector3Add(fwd, right),
+					rl.Vector3Subtract(fwd, right),
+					rl.Vector3Subtract(rl.Vector3Scale(fwd, -1), right),
+					rl.Vector3Add(rl.Vector3Scale(fwd, -1), right),
+				} {
+					testPos := rl.Vector3Add(f.Pos, rl.Vector3Scale(rl.Vector3Normalize(d), dist))
+					td := rl.Vector3Normalize(testPos)
+					h := protocol.TerrainHeight(td.X, td.Y, td.Z)
+					if h >= protocol.SeaLevel {
+						sr := protocol.SurfaceRadius(protocol.Vector3{X: td.X, Y: td.Y, Z: td.Z})
+						scale := (sr + protocol.PlayerHeight) / rl.Vector3Length(testPos)
+						bestPos = rl.Vector3Scale(testPos, scale)
+						bestH = h
+						break
+					}
+				}
+				if bestH >= protocol.SeaLevel {
+					break
+				}
+			}
+			f.Pos = bestPos
+		} else {
+			f.Pos = oldPos
+		}
+		f.Vel = rl.NewVector3(0, 0, 0)
+		return
+	}
 	surfaceR := protocol.SurfaceRadius(protocol.Vector3{X: dir.X, Y: dir.Y, Z: dir.Z})
 	minR := surfaceR + protocol.PlayerHeight
 

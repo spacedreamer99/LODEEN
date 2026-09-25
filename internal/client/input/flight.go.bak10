@@ -145,28 +145,20 @@ func (f *FlightController) updateSurvival(dt float32) {
 		jumpSpeed = 16.0
 		groundEps = 0.5
 	)
-	oldPos := f.Pos
-	dir := rl.Vector3Normalize(f.Pos)
-	th := protocol.TerrainHeight(dir.X, dir.Y, dir.Z)
-	overWater := th < protocol.SeaLevel // над водой или на воде
-	swimming := overWater && !f.InBoat  // пешком в воде
-
 	ws := float32(walkSpeed)
-	switch {
-	case f.Riding:
-		// На мамонте — быстро.
+	if f.Riding {
 		ws *= 2.5
-	case f.InBoat && overWater:
-		// На лодке по воде — быстро.
-		ws *= 2.0
-	case f.InBoat && !overWater:
-		// На лодке по суше — очень медленно.
-		ws *= 0.15
-	case swimming:
-		// Пешком в воде — медленно.
-		ws *= 0.35
 	}
+	oldPos := f.Pos
 
+	dir := rl.Vector3Normalize(f.Pos)
+	// Запрет заходить в воду без лодки.
+	th := protocol.TerrainHeight(dir.X, dir.Y, dir.Z)
+	if th < protocol.SeaLevel && !f.InBoat {
+		f.Pos = oldPos
+		f.Vel = rl.NewVector3(0, 0, 0)
+		return
+	}
 	surfaceR := protocol.SurfaceRadius(protocol.Vector3{X: dir.X, Y: dir.Y, Z: dir.Z})
 	minR := surfaceR + protocol.PlayerHeight
 

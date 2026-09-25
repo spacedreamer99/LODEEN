@@ -44,7 +44,6 @@ type Client struct {
 
 	ownHungerMu sync.RWMutex
 	ownHunger   float32
-	ownHP       int
 
 	chatCh chan protocol.ChatMessage
 
@@ -65,9 +64,6 @@ type Client struct {
 
 	mobsMu sync.RWMutex
 	mobs   []protocol.Mob
-
-	projectilesMu sync.RWMutex
-	projectiles   []protocol.MobProjectile
 
 	inventoryMu sync.RWMutex
 	inventory   map[string]int
@@ -114,12 +110,6 @@ func (c *Client) Hunger() float32 {
 	c.ownHungerMu.RLock()
 	defer c.ownHungerMu.RUnlock()
 	return c.ownHunger
-}
-
-func (c *Client) OwnHP() int {
-	c.ownHungerMu.RLock()
-	defer c.ownHungerMu.RUnlock()
-	return c.ownHP
 }
 
 func (c *Client) Houses() []protocol.House {
@@ -326,10 +316,6 @@ func (c *Client) TakeWater(wellID string) error {
 	return c.send(protocol.TypeTakeWater, protocol.TakeWater{WellID: wellID})
 }
 
-func (c *Client) HitMob(id string) error {
-	return c.send(protocol.TypeHitMob, protocol.HitMob{MobID: id})
-}
-
 func (c *Client) TameMammoth(id string) error {
 	return c.send(protocol.TypeTameMammoth, protocol.TameMammoth{MammothID: id})
 }
@@ -360,14 +346,6 @@ func (c *Client) PlaceBoat(x, y, z, yaw float32) error {
 
 func (c *Client) EnterBoat(boatID string) error {
 	return c.send(protocol.TypeEnterBoat, protocol.EnterBoat{BoatID: boatID})
-}
-
-func (c *Client) Projectiles() []protocol.MobProjectile {
-	c.projectilesMu.RLock()
-	defer c.projectilesMu.RUnlock()
-	out := make([]protocol.MobProjectile, len(c.projectiles))
-	copy(out, c.projectiles)
-	return out
 }
 
 func (c *Client) Mobs() []protocol.Mob {
@@ -523,7 +501,6 @@ func (c *Client) handle(env protocol.Envelope) {
 			if p.ID == selfID {
 				c.ownHungerMu.Lock()
 				c.ownHunger = p.Hunger
-				c.ownHP = p.HP
 				c.ownHungerMu.Unlock()
 			}
 		}
@@ -562,11 +539,6 @@ func (c *Client) handle(env protocol.Envelope) {
 		c.mobs = make([]protocol.Mob, len(s.Mobs))
 		copy(c.mobs, s.Mobs)
 		c.mobsMu.Unlock()
-
-		c.projectilesMu.Lock()
-		c.projectiles = make([]protocol.MobProjectile, len(s.Projectiles))
-		copy(c.projectiles, s.Projectiles)
-		c.projectilesMu.Unlock()
 	case protocol.TypeChat:
 		var cm protocol.ChatMessage
 		_ = env.Decode(&cm)
