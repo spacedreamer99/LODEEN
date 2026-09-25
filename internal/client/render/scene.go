@@ -12,6 +12,8 @@ type Scene struct {
 	planet    rl.Model
 	hasPlanet bool
 
+	fallback rl.Model // сфера-заглушка, если glb не загрузилась
+
 	planetPos   rl.Vector3
 	planetScale float32
 }
@@ -21,6 +23,10 @@ func NewScene(planetPath string) *Scene {
 		planetPos:   rl.Vector3Zero(),
 		planetScale: 1.0,
 	}
+	// Fallback-сфера через меш — чтобы заливка и wireframe совпадали.
+	mesh := rl.GenMeshSphere(protocol.PlanetRadius, 48, 48)
+	s.fallback = rl.LoadModelFromMesh(mesh)
+
 	if planetPath != "" {
 		m := rl.LoadModel(planetPath)
 		if m.MeshCount > 0 {
@@ -35,6 +41,7 @@ func (s *Scene) Unload() {
 	if s.hasPlanet {
 		rl.UnloadModel(s.planet)
 	}
+	rl.UnloadModel(s.fallback)
 }
 
 func (s *Scene) HasPlanet() bool { return s.hasPlanet }
@@ -49,8 +56,10 @@ func (s *Scene) Draw() {
 	if s.hasPlanet {
 		rl.DrawModel(s.planet, s.planetPos, s.planetScale, rl.White)
 	} else {
-		rl.DrawSphere(rl.Vector3Zero(), 20, rl.NewColor(60, 90, 140, 255))
-		rl.DrawSphereWires(rl.Vector3Zero(), 20, 24, 24, rl.NewColor(120, 160, 200, 120))
+		// Один меш — рисуем и заливку, и wireframe.
+		// Так обводка совпадает с формой ровно.
+		rl.DrawModel(s.fallback, s.planetPos, s.planetScale, rl.NewColor(60, 90, 140, 255))
+		rl.DrawModelWires(s.fallback, s.planetPos, s.planetScale, rl.NewColor(120, 160, 200, 180))
 	}
 }
 
@@ -78,8 +87,14 @@ func DrawResources(resources []protocol.Resource) {
 			col = rl.NewColor(120, 80, 40, 255)
 		case "ore":
 			col = rl.NewColor(200, 170, 60, 255)
+		case "fruit":
+			col = rl.NewColor(230, 70, 70, 255)
+		case "meat":
+			col = rl.NewColor(200, 100, 100, 255)
+		case "spear":
+			col = rl.NewColor(180, 160, 120, 255)
 		default:
-			col = rl.White
+			col = rl.NewColor(255, 0, 255, 255) // magenta — "неизвестный тип"
 		}
 		rl.DrawCube(pos, 1.0, 1.0, 1.0, col)
 		rl.DrawCubeWires(pos, 1.0, 1.0, 1.0, rl.Black)
@@ -99,13 +114,9 @@ func colorForID(id string) rl.Color {
 }
 
 func SpawnFromID(id string) rl.Vector3 {
-	var h uint32 = 2166136261
-	for i := 0; i < len(id); i++ {
-		h ^= uint32(id[i])
-		h *= 16777619
-	}
-	dx := float32(int32(h%13) - 6)
-	return rl.NewVector3(dx, 30, 60)
+	// Точка на экваторе — стабильное "северное" направление.
+	r := protocol.PlanetRadius + protocol.PlayerHeight
+	return rl.NewVector3(r, 0, 0)
 }
 
 func SpawnYawFromID(id string) float32 {
@@ -121,4 +132,13 @@ func hashID(id string) uint32 {
 		h *= 16777619
 	}
 	return h
+}
+
+func DrawMammoths(mammoths []protocol.Mammoth) {
+	for _, m := range mammoths {
+		pos := rl.NewVector3(m.X, m.Y, m.Z)
+		col := rl.NewColor(110, 80, 60, 255)
+		rl.DrawCube(pos, 3, 3, 3, col)
+		rl.DrawCubeWires(pos, 3, 3, 3, rl.Black)
+	}
 }

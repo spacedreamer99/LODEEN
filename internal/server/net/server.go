@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"sync"
 	"time"
@@ -26,7 +27,7 @@ const (
 	pickupRadius = 5.0
 )
 
-var resourceTypes = []string{"stone", "wood", "ore"}
+var resourceTypes = []string{"stone", "wood", "ore", "fruit"}
 
 type Metrics struct {
 	PlayersConnected prometheus.Gauge
@@ -42,9 +43,12 @@ type Client struct {
 	done chan struct{}
 	log  *slog.Logger
 
-	mu        sync.RWMutex
-	state     protocol.PlayerState
-	inventory map[string]int
+	mu          sync.RWMutex
+	state       protocol.PlayerState
+	inventory   map[string]int
+	hunger      float32
+	lastThrowAt time.Time
+	lastHitAt   time.Time
 }
 
 func (c *Client) State() protocol.PlayerState {
@@ -73,6 +77,50 @@ func (c *Client) addItem(item string) map[string]int {
 	return out
 }
 
+func (c *Client) addHunger(delta float32) {
+	c.mu.Lock()
+	c.hunger += delta
+	if c.hunger > 100 {
+		c.hunger = 100
+	}
+	if c.hunger < 0 {
+		c.hunger = 0
+	}
+	c.mu.Unlock()
+}
+
+func (c *Client) Hunger() float32 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.hunger
+}
+
+func (c *Client) consumeItem(item string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.inventory == nil {
+		return false
+	}
+	if c.inventory[item] <= 0 {
+		return false
+	}
+	c.inventory[item]--
+	if c.inventory[item] == 0 {
+		delete(c.inventory, item)
+	}
+	return true
+}
+
+func (c *Client) inventorySnapshot() map[string]int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make(map[string]int, len(c.inventory))
+	for k, v := range c.inventory {
+		out[k] = v
+	}
+	return out
+}
+
 func (c *Client) enqueue(payload []byte) {
 	select {
 	case c.send <- payload:
@@ -93,6 +141,12 @@ func (c *Client) sendEnvelope(t protocol.Type, data any) {
 	c.enqueue(raw)
 }
 
+type Mammoth struct {
+	ID  string
+	Pos protocol.Vector3
+	HP  int
+}
+
 type Server struct {
 	addr     string
 	tickRate int
@@ -106,6 +160,9 @@ type Server struct {
 
 	resourcesMu sync.RWMutex
 	resources   map[string]protocol.Resource
+
+	mammothsMu sync.RWMutex
+	mammoths   map[string]*Mammoth
 
 	tick uint64
 
@@ -124,29 +181,282 @@ func New(addr string, tickRate int, log *slog.Logger, m *Metrics) *Server {
 		resources: make(map[string]protocol.Resource),
 		done:      make(chan struct{}),
 	}
-	s.spawnResources(30)
+	s.mammoths = make(map[string]*Mammoth)
+	s.spawnResources(40)
+	s.spawnMammoths(5)
 	return s
 }
 
 func (s *Server) spawnResources(n int) {
 	for i := 0; i < n; i++ {
-		r := protocol.Resource{
+		// Случайная точка на сфере (равномерно)
+		var b [16]byte
+		_, _ = rand.Read(b[:])
+		u := float64(binary.BigEndian.Uint64(b[0:8])) / float64(^uint64(0))
+		v := float64(binary.BigEndian.Uint64(b[8:16])) / float64(^uint64(0))
+		theta := 2 * math.Pi * u
+		phi := math.Acos(2*v - 1)
+		r := float64(protocol.PlanetRadius) + 1.0
+		x := float32(math.Sin(phi) * math.Cos(theta) * r)
+		y := float32(math.Cos(phi) * r)
+		z := float32(math.Sin(phi) * math.Sin(theta) * r)
+
+		res := protocol.Resource{
 			ID:   newID(),
 			Type: resourceTypes[i%len(resourceTypes)],
-			X:    randomRange(-50, 50),
-			Y:    30,
-			Z:    randomRange(10, 110),
+			X:    x,
+			Y:    y,
+			Z:    z,
 		}
-		s.resources[r.ID] = r
+		s.resources[res.ID] = res
 	}
-	s.log.Info("spawned resources", "count", n)
+	s.log.Info("spawned resources on surface", "count", n)
 }
 
-func randomRange(min, max float32) float32 {
-	var b [4]byte
-	_, _ = rand.Read(b[:])
-	n := binary.BigEndian.Uint32(b[:])
-	return min + (float32(n%100000)/100000.0)*(max-min)
+func (s *Server) spawnMammoths(n int) {
+	for i := 0; i < n; i++ {
+		var b [16]byte
+		_, _ = rand.Read(b[:])
+		u := float64(binary.BigEndian.Uint64(b[0:8])) / float64(^uint64(0))
+		v := float64(binary.BigEndian.Uint64(b[8:16])) / float64(^uint64(0))
+		theta := 2 * math.Pi * u
+		phi := math.Acos(2*v - 1)
+		r := float64(protocol.PlanetRadius) + 2.0
+		x := float32(math.Sin(phi) * math.Cos(theta) * r)
+		y := float32(math.Cos(phi) * r)
+		z := float32(math.Sin(phi) * math.Sin(theta) * r)
+		id := newID()
+		s.mammoths[id] = &Mammoth{
+			ID:  id,
+			Pos: protocol.Vector3{X: x, Y: y, Z: z},
+			HP:  1,
+		}
+	}
+	s.log.Info("spawned mammoths", "count", n)
+}
+
+func (s *Server) tickMammoths(dt float32) {
+	const fleeRadius = 30.0
+	const speed = 8.0
+	const mammothR = float64(protocol.PlanetRadius) + 2.0
+
+	// Собираем игроков
+	s.mu.RLock()
+	players := make([]protocol.PlayerState, 0, len(s.clients))
+	for _, c := range s.clients {
+		players = append(players, c.State())
+	}
+	s.mu.RUnlock()
+
+	s.mammothsMu.Lock()
+	defer s.mammothsMu.Unlock()
+
+	for _, m := range s.mammoths {
+		// ближайший игрок
+		var nearest *protocol.PlayerState
+		minD2 := float32(fleeRadius * fleeRadius)
+		for i := range players {
+			dx := players[i].X - m.Pos.X
+			dy := players[i].Y - m.Pos.Y
+			dz := players[i].Z - m.Pos.Z
+			d2 := dx*dx + dy*dy + dz*dz
+			if d2 < minD2 {
+				minD2 = d2
+				nearest = &players[i]
+			}
+		}
+		if nearest == nil {
+			continue
+		}
+
+		// направление "от игрока" в касательной плоскости
+		upX := m.Pos.X
+		upY := m.Pos.Y
+		upZ := m.Pos.Z
+		l := float32(math.Sqrt(float64(upX*upX + upY*upY + upZ*upZ)))
+		if l < 0.01 {
+			continue
+		}
+		upX /= l
+		upY /= l
+		upZ /= l
+
+		toX := nearest.X - m.Pos.X
+		toY := nearest.Y - m.Pos.Y
+		toZ := nearest.Z - m.Pos.Z
+		dot := toX*upX + toY*upY + toZ*upZ
+		tanX := toX - upX*dot
+		tanY := toY - upY*dot
+		tanZ := toZ - upZ*dot
+		lt := float32(math.Sqrt(float64(tanX*tanX + tanY*tanY + tanZ*tanZ)))
+		if lt < 0.1 {
+			continue
+		}
+		// нормализуем и инвертируем (бежать ОТ игрока)
+		tanX = -tanX / lt
+		tanY = -tanY / lt
+		tanZ = -tanZ / lt
+
+		m.Pos.X += tanX * speed * dt
+		m.Pos.Y += tanY * speed * dt
+		m.Pos.Z += tanZ * speed * dt
+
+		// прижать к поверхности
+		rl := float32(math.Sqrt(float64(m.Pos.X*m.Pos.X + m.Pos.Y*m.Pos.Y + m.Pos.Z*m.Pos.Z)))
+		if rl < 0.01 {
+			continue
+		}
+		scale := float32(mammothR) / rl
+		m.Pos.X *= scale
+		m.Pos.Y *= scale
+		m.Pos.Z *= scale
+	}
+}
+
+func (s *Server) handleThrowSpear(c *Client, dir protocol.Vector3) {
+	// Валидация: есть ли копьё.
+	if !c.consumeItem("spear") {
+		return
+	}
+	// Cooldown: не чаще раза в 0.8 сек.
+	now := time.Now()
+	if now.Sub(c.lastThrowAt) < 800*time.Millisecond {
+		// отдаём копьё обратно
+		c.mu.Lock()
+		c.inventory["spear"]++
+		inv := make(map[string]int, len(c.inventory))
+		for k, v := range c.inventory {
+			inv[k] = v
+		}
+		c.mu.Unlock()
+		c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
+		return
+	}
+	c.lastThrowAt = now
+	c.log.Info("spear thrown (client will detect hit)")
+
+	c.mu.Lock()
+	inv := make(map[string]int, len(c.inventory))
+	for k, v := range c.inventory {
+		inv[k] = v
+	}
+	c.mu.Unlock()
+	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
+}
+
+func (s *Server) handleHitMammoth(c *Client, mammothID string) {
+	now := time.Now()
+
+	// Тихо гасим дубли HitMammoth в пределах 200 мс — норма для клиента.
+	if now.Sub(c.lastHitAt) < 200*time.Millisecond {
+		return
+	}
+
+	// Валидация: игрок недавно бросил копьё.
+	if now.Sub(c.lastThrowAt) > 2*time.Second {
+		c.log.Warn("hit rejected: no recent throw")
+		return
+	}
+
+	c.lastHitAt = now
+
+	// Валидация: мамонт существует.
+	s.mammothsMu.Lock()
+	m, ok := s.mammoths[mammothID]
+	if !ok {
+		s.mammothsMu.Unlock()
+		c.log.Warn("hit rejected: mammoth not found")
+		return
+	}
+
+	// Валидация: мамонт в разумной близости от игрока.
+	ps := c.State()
+	dx := m.Pos.X - ps.X
+	dy := m.Pos.Y - ps.Y
+	dz := m.Pos.Z - ps.Z
+	dist2 := dx*dx + dy*dy + dz*dz
+	const maxD2 float32 = 80.0 * 80.0
+	if dist2 > maxD2 {
+		s.mammothsMu.Unlock()
+		c.log.Warn("hit rejected: too far", "d2", dist2)
+		return
+	}
+
+	m.HP--
+	var meatPos protocol.Vector3
+	killed := m.HP <= 0
+	if killed {
+		meatPos = m.Pos
+		delete(s.mammoths, mammothID)
+	}
+	s.mammothsMu.Unlock()
+
+
+	if killed {
+		s.resourcesMu.Lock()
+		meatID := newID()
+		s.resources[meatID] = protocol.Resource{
+			ID:   meatID,
+			Type: "meat",
+			X:    meatPos.X,
+			Y:    meatPos.Y,
+			Z:    meatPos.Z,
+		}
+		// Небольшой сдвиг, чтобы копьё не совпадало с мясом и его можно было подобрать отдельно.
+		spearID := newID()
+		s.resources[spearID] = protocol.Resource{
+			ID:   spearID,
+			Type: "spear",
+			X:    meatPos.X + 1.5,
+			Y:    meatPos.Y,
+			Z:    meatPos.Z + 1.5,
+		}
+		s.resourcesMu.Unlock()
+		c.log.Info("mammoth KILLED", "id", mammothID)
+	} else {
+		c.log.Info("mammoth hit", "id", mammothID, "hp", m.HP)
+	}
+}
+
+func (s *Server) handleCraft(c *Client, recipe string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Требования рецептов — на сервере, для валидации.
+	type req map[string]int
+	recipes := map[string]struct {
+		need req
+		have req
+	}{
+		"spear": {need: req{"stone": 2, "wood": 1}, have: req{"spear": 1}},
+	}
+	r, ok := recipes[recipe]
+	if !ok {
+		c.log.Warn("unknown recipe", "recipe", recipe)
+		return
+	}
+	for k, n := range r.need {
+		if c.inventory[k] < n {
+			c.log.Info("craft failed: not enough materials", "recipe", recipe, "missing", k)
+			return
+		}
+	}
+	for k, n := range r.need {
+		c.inventory[k] -= n
+		if c.inventory[k] == 0 {
+			delete(c.inventory, k)
+		}
+	}
+	for k, n := range r.have {
+		c.inventory[k] += n
+	}
+
+	out := make(map[string]int, len(c.inventory))
+	for k, v := range c.inventory {
+		out[k] = v
+	}
+	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: out})
+	c.log.Info("crafted", "recipe", recipe)
 }
 
 func (s *Server) Start() error {
@@ -222,6 +532,7 @@ func (s *Server) handleConn(conn net.Conn) {
 		done:      make(chan struct{}),
 		log:       log,
 		inventory: make(map[string]int),
+		hunger:    100,
 	}
 
 	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
@@ -333,12 +644,37 @@ func (s *Server) handleMessage(c *Client, env *protocol.Envelope) {
 			Sent:     p.Sent,
 			ServerTS: time.Now().UnixMilli(),
 		})
+	case protocol.TypeEatFruit:
+		if c.consumeItem("fruit") {
+			c.addHunger(20)
+			inv := c.inventorySnapshot()
+			c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
+			c.log.Info("ate fruit", "hunger", c.Hunger())
+		}
 	case protocol.TypePickupItem:
 		var p protocol.PickupItem
 		if err := env.Decode(&p); err != nil {
 			return
 		}
 		s.handlePickup(c, p.ResourceID)
+	case protocol.TypeThrowSpear:
+		var p protocol.ThrowSpear
+		if err := env.Decode(&p); err != nil {
+			return
+		}
+		s.handleThrowSpear(c, p.Dir)
+	case protocol.TypeCraftItem:
+		var p protocol.CraftItem
+		if err := env.Decode(&p); err != nil {
+			return
+		}
+		s.handleCraft(c, p.Recipe)
+	case protocol.TypeHitMammoth:
+		var p protocol.HitMammoth
+		if err := env.Decode(&p); err != nil {
+			return
+		}
+		s.handleHitMammoth(c, p.MammothID)
 	}
 }
 
@@ -392,9 +728,48 @@ func (s *Server) tickLoop() {
 		case <-t.C:
 			s.tick++
 			s.metrics.TicksTotal.Inc()
+			s.tickHunger(1.0 / float64(s.tickRate))
+			s.tickMammoths(float32(1.0 / float64(s.tickRate)))
 			s.broadcastSnapshot()
 		case <-s.done:
 			return
+		}
+	}
+}
+
+func (s *Server) tickHunger(dt float64) {
+	const hungerRate = 0.333
+	const autoEatThreshold = 50.0
+	const fruitValue = 20.0
+
+	dec := float32(hungerRate * dt)
+
+	s.mu.RLock()
+	clients := make([]*Client, 0, len(s.clients))
+	for _, c := range s.clients {
+		clients = append(clients, c)
+	}
+	s.mu.RUnlock()
+
+	for _, c := range clients {
+		c.addHunger(-dec)
+
+		// Автосъедание: fruit (20), затем meat (30)
+		for c.Hunger() < autoEatThreshold {
+			eaten := ""
+			if c.consumeItem("fruit") {
+				c.addHunger(20)
+				eaten = "fruit"
+			} else if c.consumeItem("meat") {
+				c.addHunger(30)
+				eaten = "meat"
+			}
+			if eaten == "" {
+				break
+			}
+			inv := c.inventorySnapshot()
+			c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
+			c.log.Info("auto-ate", "item", eaten, "hunger", c.Hunger())
 		}
 	}
 }
@@ -403,7 +778,9 @@ func (s *Server) broadcastSnapshot() {
 	s.mu.RLock()
 	players := make([]protocol.PlayerState, 0, len(s.clients))
 	for _, c := range s.clients {
-		players = append(players, c.State())
+		ps := c.State()
+		ps.Hunger = c.Hunger()
+		players = append(players, ps)
 	}
 	s.mu.RUnlock()
 
@@ -414,10 +791,20 @@ func (s *Server) broadcastSnapshot() {
 	}
 	s.resourcesMu.RUnlock()
 
+	s.mammothsMu.RLock()
+	mammoths := make([]protocol.Mammoth, 0, len(s.mammoths))
+	for _, m := range s.mammoths {
+		mammoths = append(mammoths, protocol.Mammoth{
+			ID: m.ID, X: m.Pos.X, Y: m.Pos.Y, Z: m.Pos.Z, HP: m.HP,
+		})
+	}
+	s.mammothsMu.RUnlock()
+
 	env, err := protocol.NewEnvelope(protocol.TypeSnapshot, protocol.Snapshot{
 		Tick:      s.tick,
 		Players:   players,
 		Resources: resources,
+		Mammoths:  mammoths,
 	})
 	if err != nil {
 		return

@@ -25,6 +25,12 @@ const (
 	screenH = 720
 )
 
+type projectile struct {
+	pos   rl.Vector3
+	dir   rl.Vector3
+	spawn time.Time
+}
+
 type App struct {
 	cfg *config.Config
 	log *slog.Logger
@@ -53,6 +59,11 @@ type App struct {
 
 	cursorCaptured bool
 	quit           bool
+	showInventory  bool
+	showCraft      bool
+	selectedSlot   int
+	projectiles    []projectile
+	startAt        time.Time
 
 	lastKeys  string
 	lastMouse string
@@ -78,6 +89,7 @@ func (a *App) Run() error {
 	rl.SetExitKey(rl.KeyNull)
 
 	a.resizeUITarget()
+	a.startAt = time.Now()
 	fonts.Load(28)
 	if os.Getenv("LODEEN_FONT_DEBUG") == "1" {
 		fonts.DebugDump()
@@ -132,6 +144,8 @@ func (a *App) setCursorCaptured(c bool) {
 func (a *App) update(dt float32) {
 	a.drainChat()
 
+	a.updateProjectiles()
+
 	switch a.mode {
 	case state.ModeMenu:
 		a.updateMenu()
@@ -182,12 +196,72 @@ func (a *App) updatePlaying(dt float32) {
 		return
 	}
 
+	if rl.IsKeyPressed(rl.KeyF1) && a.flight != nil {
+		if a.flight.Mode == input.ModeCreative {
+			a.flight.Mode = input.ModeSurvival
+		} else {
+			a.flight.Mode = input.ModeCreative
+		}
+		a.log.Info("mode changed", "mode", a.flight.Mode)
+	}
+	// C — открыть окно крафта (всегда)
+	if rl.IsKeyPressed(rl.KeyC) {
+		a.showCraft = true
+		a.showInventory = false
+		rl.EnableCursor()
+		rl.ShowCursor()
+	}
+	// I — инвентарь (toggle)
+	if rl.IsKeyPressed(rl.KeyI) {
+		a.showInventory = !a.showInventory
+		if a.showInventory {
+			a.showCraft = false
+			rl.EnableCursor()
+			rl.ShowCursor()
+		} else {
+			rl.DisableCursor()
+		}
+	}
+	// Меню открыто — стоп движению, закрытие на Esc
+	if a.showInventory || a.showCraft {
+		if rl.IsKeyPressed(rl.KeyEscape) {
+			a.showInventory = false
+			a.showCraft = false
+			rl.DisableCursor()
+		}
+		return
+	}
+	// В Survival колёсико выбирает слот из первой строки инвентаря.
+	if a.flight != nil && a.flight.Mode == input.ModeSurvival {
+		wheel := rl.GetMouseWheelMove()
+		if wheel > 0 {
+			a.selectedSlot = (a.selectedSlot + 1) % 16
+		} else if wheel < 0 {
+			a.selectedSlot = (a.selectedSlot + 15) % 16
+		}
+	}
 	if rl.IsKeyPressed(rl.KeyT) {
 		a.chat.Begin()
 		return
 	}
 	if rl.IsKeyPressed(rl.KeyF) {
 		a.tryPickup()
+	}
+	// ЛКМ — бросок копья, если оно в руке.
+	if rl.IsMouseButtonPressed(rl.MouseLeftButton) && a.flight != nil {
+		if a.heldItem() == "spear" {
+			fw := a.flight.Forward()
+			dir := protocol.Vector3{X: fw.X, Y: fw.Y, Z: fw.Z}
+			if err := a.nc.ThrowSpear(dir); err != nil {
+				a.log.Warn("throw spear", "err", err)
+			}
+			a.projectiles = append(a.projectiles, projectile{
+				pos:   a.camera.Position,
+				dir:   fw,
+				spawn: time.Now(),
+			})
+			a.log.Info("spear thrown (LMB)")
+		}
 	}
 	if rl.IsKeyPressed(rl.KeyEscape) {
 		a.mode = state.ModePaused
@@ -292,6 +366,7 @@ func (a *App) draw() {
 	sh := int32(rl.GetScreenHeight())
 	if sw != a.uiTargetW || sh != a.uiTargetH {
 		a.resizeUITarget()
+		a.startAt = time.Now()
 	}
 
 	rl.BeginDrawing()
@@ -307,6 +382,9 @@ func (a *App) draw() {
 		a.scene.Draw()
 		render.DrawPlayers(a.nc.InterpolatedSnapshot(), a.nc.PlayerID(), a.camera)
 		render.DrawResources(a.nc.Resources())
+		render.DrawMammoths(a.nc.Mammoths())
+		a.drawProjectiles()
+		a.drawHeldItem()
 		rl.EndMode3D()
 	}
 
@@ -466,22 +544,73 @@ func (a *App) drawHUD() {
 	// FPS — левый верх
 	now := time.Now()
 	if now.Sub(a.lastFPSAt) > 500*time.Millisecond {
-		a.cachedFPS = rl.GetFPS()
+		// Не показываем FPS первые 2 секунды — окно ещё не стабилизировалось.
+		if now.Sub(a.startAt) > 2*time.Second {
+			a.cachedFPS = rl.GetFPS()
+		} else {
+			a.cachedFPS = 0
+		}
 		a.lastFPSAt = now
 	}
-	fonts.Draw(fmt.Sprintf("FPS: %d", a.cachedFPS), pad, pad, 18, rl.RayWhite)
-
-	// Инвентарь — левый верх, под FPS
-	inv := a.nc.Inventory()
-	if len(inv) > 0 {
-		y := pad + 24
-		for _, item := range []string{"stone", "wood", "ore"} {
-			if n, ok := inv[item]; ok {
-				fonts.Draw(fmt.Sprintf("%s: %d", item, n), pad, y, 18, rl.RayWhite)
-				y += 22
-			}
-		}
+	if a.cachedFPS > 0 {
+		fonts.Draw(fmt.Sprintf("FPS: %d", a.cachedFPS), pad, pad, 18, rl.RayWhite)
 	}
+
+	// Полоска голода под FPS
+	barX := pad
+	barY := pad + 26
+	barW := int32(180)
+	barH := int32(14)
+	hunger := a.nc.Hunger()
+	if hunger < 0 {
+		hunger = 0
+	} else if hunger > 100 {
+		hunger = 100
+	}
+	rl.DrawRectangle(barX, barY, barW, barH, rl.NewColor(40, 40, 40, 220))
+	fillW := int32(float32(barW) * hunger / 100)
+	if fillW > 0 {
+		var col rl.Color
+		switch {
+		case hunger > 60:
+			col = rl.NewColor(90, 200, 90, 240)
+		case hunger > 25:
+			col = rl.NewColor(230, 180, 60, 240)
+		default:
+			col = rl.NewColor(210, 70, 70, 240)
+		}
+		rl.DrawRectangle(barX, barY, fillW, barH, col)
+	}
+	rl.DrawRectangleLines(barX, barY, barW, barH, rl.NewColor(120, 120, 130, 255))
+	fonts.Draw(fmt.Sprintf("Hunger: %.0f", hunger), barX+barW+8, barY, 16, rl.RayWhite)
+
+	// Полоска голода под FPS
+	barX = pad
+	barY = pad + 26
+	barW = int32(180)
+	barH = int32(14)
+	hunger = a.nc.Hunger()
+	if hunger < 0 {
+		hunger = 0
+	} else if hunger > 100 {
+		hunger = 100
+	}
+	rl.DrawRectangle(barX, barY, barW, barH, rl.NewColor(40, 40, 40, 220))
+	fillW = int32(float32(barW) * hunger / 100)
+	if fillW > 0 {
+		var col rl.Color
+		switch {
+		case hunger > 60:
+			col = rl.NewColor(90, 200, 90, 240)
+		case hunger > 25:
+			col = rl.NewColor(230, 180, 60, 240)
+		default:
+			col = rl.NewColor(210, 70, 70, 240)
+		}
+		rl.DrawRectangle(barX, barY, fillW, barH, col)
+	}
+	rl.DrawRectangleLines(barX, barY, barW, barH, rl.NewColor(120, 120, 130, 255))
+	fonts.Draw(fmt.Sprintf("Hunger: %.0f", hunger), barX+barW+8, barY, 16, rl.RayWhite)
 
 	// RTT — правый верх
 	rtt := a.nc.RTT().Milliseconds()
@@ -498,12 +627,21 @@ func (a *App) drawHUD() {
 	px, py := ui.Place(ui.TopRight, pad, pad+22, plW, 18)
 	fonts.Draw(plText, px, py, 18, rl.RayWhite)
 
-	// Speed — правый верх, под Players
+	// Speed + Mode — правый верх, под Players
 	if a.flight != nil {
 		spdText := fmt.Sprintf("Speed: %.0f", a.flight.Speed)
 		spdW := fonts.Measure(spdText, 18)
 		sx, sy := ui.Place(ui.TopRight, pad, pad+44, spdW, 18)
 		fonts.Draw(spdText, sx, sy, 18, rl.RayWhite)
+
+		modeName := "Creative"
+		if a.flight.Mode == input.ModeSurvival {
+			modeName = "Survival"
+		}
+		modeText := "Mode: " + modeName + "  [F1]"
+		modeW := fonts.Measure(modeText, 18)
+		mx, my := ui.Place(ui.TopRight, pad, pad+66, modeW, 18)
+		fonts.Draw(modeText, mx, my, 18, rl.Yellow)
 	}
 
 	// Подсказка подбора — над чатом
@@ -513,7 +651,7 @@ func (a *App) drawHUD() {
 	fonts.Draw(pickupHint, phx, phy, 18, rl.Yellow)
 
 	// Help — левый низ
-	help := "WASD - move - Space up - Shift down - Q/E roll - Mouse wheel speed"
+	help := "WASD - move - Space up - Shift down - Q/E roll - Mouse wheel slot/speed"
 	hw := fonts.Measure(help, 16)
 	hx, hy := ui.Place(ui.BottomLeft, pad, pad+40, hw, 16)
 	fonts.Draw(help, hx, hy, 16, rl.Gray)
@@ -522,6 +660,66 @@ func (a *App) drawHUD() {
 	sw := int(rl.GetScreenWidth())
 	sh := int(rl.GetScreenHeight())
 	a.chat.Draw(sw, sh-30)
+
+	if a.showInventory {
+		a.drawInventory()
+	}
+	if a.showCraft {
+		a.drawCraft()
+	}
+
+	// Hotbar внизу по центру — только в Survival
+	if a.flight != nil && a.flight.Mode == input.ModeSurvival {
+		a.drawHotbar()
+	}
+}
+
+// drawHotbar — первая строка инвентаря внизу по центру.
+func (a *App) drawHotbar() {
+	const slots = 16
+	const cell = int32(44)
+	const pad3 = int32(6)
+
+	sw := int32(rl.GetScreenWidth())
+	sh := int32(rl.GetScreenHeight())
+	barW := slots*cell + pad3*2
+	barH := cell + pad3*2
+	px := (sw - barW) / 2
+	py := sh - barH - 20
+
+	panel := rl.NewRectangle(float32(px), float32(py), float32(barW), float32(barH))
+	rl.DrawRectangleRec(panel, rl.NewColor(15, 15, 25, 200))
+	rl.DrawRectangleLinesEx(panel, 2, rl.NewColor(120, 120, 140, 255))
+
+	// Соберём первую строку из инвентаря
+	items := []string{}
+	inv := a.nc.Inventory()
+	for _, t := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch"} {
+		if n, ok := inv[t]; ok && n > 0 {
+			items = append(items, t)
+		}
+	}
+
+	for i := 0; i < slots; i++ {
+		cx := px + pad3 + int32(i)*cell
+		cy := py + pad3
+		rect := rl.NewRectangle(float32(cx), float32(cy), float32(cell-2), float32(cell-2))
+		rl.DrawRectangleRec(rect, rl.NewColor(30, 30, 40, 255))
+		rl.DrawRectangleLinesEx(rect, 1, rl.NewColor(70, 70, 90, 255))
+
+		if i == a.selectedSlot {
+			rl.DrawRectangleLinesEx(rect, 3, rl.NewColor(255, 220, 90, 255))
+		}
+
+		if i < len(items) {
+			typ := items[i]
+			col := itemColor(typ)
+			rl.DrawRectangleRec(rl.NewRectangle(float32(cx+9), float32(cy+9), float32(cell-20), float32(cell-20)), col)
+			if n := inv[typ]; n > 0 {
+				fonts.Draw(fmt.Sprintf("%d", n), cx+4, cy+cell-20, 14, rl.White)
+			}
+		}
+	}
 }
 
 func (a *App) startConnect() {
@@ -646,4 +844,322 @@ func (a *App) tryPickup() {
 	}
 	a.log.Info("pickup: sending", "id", closest.ID, "type", closest.Type, "dist", closestDist)
 	_ = a.nc.PickupItem(closest.ID)
+}
+
+// drawInventory — сетка 16×16 с подсветкой первой строки и tooltip.
+func (a *App) drawInventory() {
+	const cols, rows = 16, 16
+	const cell = int32(38)
+	const pad2 = int32(10)
+
+	sw := int32(rl.GetScreenWidth())
+	sh := int32(rl.GetScreenHeight())
+	gridW := cols*cell + pad2*2
+	gridH := rows*cell + pad2*2 + 30
+	px := (sw - gridW) / 2
+	py := (sh - gridH) / 2
+
+	// затемнение и панель
+	rl.DrawRectangle(0, 0, sw, sh, rl.Fade(rl.Black, 0.6))
+	panel := rl.NewRectangle(float32(px), float32(py), float32(gridW), float32(gridH))
+	rl.DrawRectangleRec(panel, rl.NewColor(20, 20, 30, 245))
+	rl.DrawRectangleLinesEx(panel, 2, rl.NewColor(120, 120, 140, 255))
+
+	fonts.Draw("Inventory   [I / Esc close]", px+pad2, py+6, 20, rl.RayWhite)
+
+	// список предметов
+	type slot struct {
+		typ string
+		n   int
+	}
+	items := []slot{}
+	inv := a.nc.Inventory()
+	for _, t := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch"} {
+		if n, ok := inv[t]; ok && n > 0 {
+			items = append(items, slot{t, n})
+		}
+	}
+
+	mouse := rl.GetMousePosition()
+	gridY := py + 30 + pad2
+
+	var hoveredName string
+
+	for i := 0; i < cols*rows; i++ {
+		col := int32(i % cols)
+		row := int32(i / cols)
+		cx := px + pad2 + col*cell
+		cy := gridY + row*cell
+		rect := rl.NewRectangle(float32(cx), float32(cy), float32(cell-2), float32(cell-2))
+
+		// фон ячейки (первая строка — акцентная)
+		bg := rl.NewColor(32, 32, 44, 255)
+		if row == 0 {
+			bg = rl.NewColor(60, 50, 30, 255)
+		}
+		rl.DrawRectangleRec(rect, bg)
+		rl.DrawRectangleLinesEx(rect, 1, rl.NewColor(70, 70, 90, 255))
+
+		// рамка выбранного слота
+		if row == 0 && int(col) == a.selectedSlot {
+			rl.DrawRectangleLinesEx(rect, 3, rl.NewColor(255, 220, 90, 255))
+		}
+
+		if i >= len(items) {
+			continue
+		}
+		it := items[i]
+		col2 := itemColor(it.typ)
+		icon := rl.NewRectangle(float32(cx+8), float32(cy+8), float32(cell-18), float32(cell-18))
+		rl.DrawRectangleRec(icon, col2)
+		fonts.Draw(fmt.Sprintf("%d", it.n), cx+3, cy+cell-18, 14, rl.White)
+
+		// hover — проверяем пересечение
+		if rl.CheckCollisionPointRec(mouse, rect) {
+			hoveredName = fmt.Sprintf("%s  x%d", itemName(it.typ), it.n)
+		}
+	}
+
+	// tooltip — поверх всего, привязан к курсору
+	if hoveredName != "" {
+		tw := fonts.Measure(hoveredName, 16)
+		tx := int32(mouse.X) + 18
+		ty := int32(mouse.Y) + 14
+
+		if tx+tw+20 > sw {
+			tx = int32(mouse.X) - tw - 22
+		}
+		if ty+30 > sh {
+			ty = sh - 34
+		}
+
+		box := rl.NewRectangle(float32(tx-6), float32(ty-4), float32(tw+12), 24)
+		rl.DrawRectangleRec(box, rl.NewColor(10, 10, 20, 245))
+		rl.DrawRectangleLinesEx(box, 1, rl.NewColor(200, 200, 220, 255))
+		fonts.Draw(hoveredName, tx, ty, 16, rl.White)
+	}
+}
+
+// itemColor возвращает цвет иконки для типа ресурса.
+func itemColor(typ string) rl.Color {
+	switch typ {
+	case "stone":
+		return rl.NewColor(140, 140, 150, 255)
+	case "wood":
+		return rl.NewColor(120, 80, 40, 255)
+	case "ore":
+		return rl.NewColor(200, 170, 60, 255)
+	case "fruit":
+		return rl.NewColor(230, 70, 70, 255)
+	case "meat":
+		return rl.NewColor(200, 100, 100, 255)
+	case "spear":
+		return rl.NewColor(180, 160, 120, 255)
+	case "torch":
+		return rl.NewColor(240, 180, 80, 255)
+	}
+	return rl.White
+}
+
+// itemName — человекочитаемое имя.
+func itemName(typ string) string {
+	switch typ {
+	case "stone":
+		return "Stone"
+	case "wood":
+		return "Wood"
+	case "ore":
+		return "Ore"
+	case "fruit":
+		return "Fruit"
+	case "meat":
+		return "Meat"
+	case "spear":
+		return "Spear"
+	case "torch":
+		return "Torch"
+	}
+	return typ
+}
+
+// craftRecipes — клиентский список рецептов для UI.
+// Сервер валидирует независимо, здесь — только отображение.
+type craftRecipe struct {
+	id   string
+	name string
+	out  string
+	req  map[string]int
+}
+
+var craftRecipes = []craftRecipe{
+	{id: "spear", name: "Spear", out: "spear", req: map[string]int{"stone": 2, "wood": 1}},
+	{id: "torch", name: "Torch", out: "torch", req: map[string]int{"stone": 1, "wood": 1}},
+}
+
+// drawCraft — окно крафта со списком рецептов.
+func (a *App) drawCraft() {
+	sw := int32(rl.GetScreenWidth())
+	sh := int32(rl.GetScreenHeight())
+	pw := int32(660)
+	ph := int32(120 + 90*len(craftRecipes))
+	px := (sw - pw) / 2
+	py := (sh - ph) / 2
+
+	rl.DrawRectangle(0, 0, sw, sh, rl.Fade(rl.Black, 0.6))
+	panel := rl.NewRectangle(float32(px), float32(py), float32(pw), float32(ph))
+	rl.DrawRectangleRec(panel, rl.NewColor(20, 20, 30, 245))
+	rl.DrawRectangleLinesEx(panel, 2, rl.NewColor(120, 120, 140, 255))
+
+	fonts.Draw("Crafting   [C / Esc to close]", px+14, py+10, 22, rl.RayWhite)
+
+	inv := a.nc.Inventory()
+	rowH := int32(90)
+	for i, rec := range craftRecipes {
+		cardY := py + 50 + int32(i)*rowH
+		card := rl.NewRectangle(float32(px+12), float32(cardY), float32(pw-24), float32(rowH-8))
+		rl.DrawRectangleRec(card, rl.NewColor(30, 30, 42, 255))
+		rl.DrawRectangleLinesEx(card, 1, rl.NewColor(70, 70, 90, 255))
+
+		// иконка
+		var col rl.Color
+		switch rec.out {
+		case "spear":
+			col = rl.NewColor(180, 160, 120, 255)
+		case "torch":
+			col = rl.NewColor(240, 180, 80, 255)
+		default:
+			col = rl.White
+		}
+		rl.DrawRectangleRec(rl.NewRectangle(float32(px+22), float32(cardY+9), 56, 56), col)
+
+		// имя
+		fonts.Draw(rec.name, px+94, cardY+8, 22, rl.RayWhite)
+
+		// требования
+		reqText := ""
+		canCraft := true
+		for _, k := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch"} {
+			if need, ok := rec.req[k]; ok {
+				have := inv[k]
+				reqText += fmt.Sprintf("%s %d/%d   ", k, have, need)
+				if have < need {
+					canCraft = false
+				}
+			}
+		}
+		reqCol := rl.NewColor(90, 220, 90, 255)
+		if !canCraft {
+			reqCol = rl.NewColor(230, 90, 90, 255)
+		}
+		fonts.Draw(reqText, px+94, cardY+42, 16, reqCol)
+
+		// кнопка
+		btn := ui.Button{
+			Rect: rl.NewRectangle(float32(px+pw-150), float32(cardY+22), 130, 42),
+			Text: "Craft",
+		}
+		btn.Draw()
+		if btn.Clicked() && canCraft {
+			_ = a.nc.CraftItem(rec.id)
+		}
+	}
+}
+
+// drawHeldItem — предмет в руках: куб перед камерой.
+// Работает только в Survival, если в selectedSlot есть предмет.
+func (a *App) drawHeldItem() {
+	if a.flight == nil || a.flight.Mode != input.ModeSurvival {
+		return
+	}
+	// Найдём предмет в selectedSlot
+	items := []string{}
+	inv := a.nc.Inventory()
+	for _, t := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch"} {
+		if n, ok := inv[t]; ok && n > 0 {
+			items = append(items, t)
+		}
+	}
+	if a.selectedSlot >= len(items) {
+		return
+	}
+	typ := items[a.selectedSlot]
+	col := itemColor(typ)
+
+	// Локальные оси камеры
+	fw := rl.Vector3Normalize(rl.Vector3Subtract(a.camera.Target, a.camera.Position))
+	right := rl.Vector3Normalize(rl.Vector3CrossProduct(fw, a.camera.Up))
+	up := rl.Vector3Normalize(rl.Vector3CrossProduct(right, fw))
+
+	// Позиция в правом нижнем углу, чуть впереди
+	pos := a.camera.Position
+	pos = rl.Vector3Add(pos, rl.Vector3Scale(fw, 0.7))
+	pos = rl.Vector3Add(pos, rl.Vector3Scale(right, 0.4))
+	pos = rl.Vector3Subtract(pos, rl.Vector3Scale(up, 0.35))
+
+	size := float32(0.25)
+	rl.DrawCube(pos, size, size, size, col)
+	rl.DrawCubeWires(pos, size, size, size, rl.Black)
+}
+
+// heldItem возвращает тип предмета в selectedSlot (пустая строка — ничего).
+func (a *App) heldItem() string {
+	inv := a.nc.Inventory()
+	items := []string{}
+	for _, t := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch"} {
+		if n, ok := inv[t]; ok && n > 0 {
+			items = append(items, t)
+		}
+	}
+	if a.selectedSlot < 0 || a.selectedSlot >= len(items) {
+		return ""
+	}
+	return items[a.selectedSlot]
+}
+
+// updateProjectiles — локальная симуляция снарядов с детекцией коллизии.
+func (a *App) updateProjectiles() {
+	if len(a.projectiles) == 0 {
+		return
+	}
+	now := time.Now()
+	dt := rl.GetFrameTime()
+	const speed = 60.0
+	const ttl = 1.5
+	const hitR = 15.0
+
+	mammoths := a.nc.Mammoths()
+
+	alive := a.projectiles[:0]
+	for _, p := range a.projectiles {
+		if now.Sub(p.spawn).Seconds() > ttl {
+			continue
+		}
+		p.pos = rl.Vector3Add(p.pos, rl.Vector3Scale(p.dir, speed*dt))
+
+		var hitID string
+		for _, m := range mammoths {
+			dx := p.pos.X - m.X
+			dy := p.pos.Y - m.Y
+			dz := p.pos.Z - m.Z
+			if dx*dx+dy*dy+dz*dz < hitR*hitR {
+				hitID = m.ID
+				break
+			}
+		}
+		if hitID != "" {
+			_ = a.nc.HitMammoth(hitID)
+			a.log.Info("local hit detected", "mammoth", hitID)
+			continue
+		}
+		alive = append(alive, p)
+	}
+	a.projectiles = alive
+}
+
+// drawProjectiles — рисует локальные снаряды жёлтыми сферами.
+func (a *App) drawProjectiles() {
+	for _, p := range a.projectiles {
+		rl.DrawSphere(p.pos, 0.4, rl.NewColor(255, 220, 60, 255))
+		rl.DrawSphereWires(p.pos, 0.4, 12, 12, rl.NewColor(180, 140, 20, 255))
+	}
 }

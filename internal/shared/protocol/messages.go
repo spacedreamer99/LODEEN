@@ -2,6 +2,13 @@ package protocol
 
 import "encoding/json"
 
+const (
+	// PlanetRadius — радиус планеты в игровых единицах.
+	PlanetRadius float32 = 50.0
+	// PlayerHeight — расстояние от поверхности до «глаз» игрока.
+	PlayerHeight float32 = 1.5
+)
+
 type Type string
 
 const (
@@ -14,6 +21,10 @@ const (
 	TypePong            Type = "pong"
 	TypePickupItem      Type = "pickup_item"
 	TypeInventoryUpdate Type = "inventory_update"
+	TypeEatFruit        Type = "eat_fruit"
+	TypeThrowSpear      Type = "throw_spear"
+	TypeCraftItem       Type = "craft_item"
+	TypeHitMammoth      Type = "hit_mammoth"
 )
 
 type Envelope struct {
@@ -49,13 +60,14 @@ type Welcome struct {
 }
 
 type PlayerState struct {
-	ID    string  `json:"id"`
-	Nick  string  `json:"nick"`
-	X     float32 `json:"x"`
-	Y     float32 `json:"y"`
-	Z     float32 `json:"z"`
-	Yaw   float32 `json:"yaw"`
-	Pitch float32 `json:"pitch"`
+	ID     string  `json:"id"`
+	Nick   string  `json:"nick"`
+	X      float32 `json:"x"`
+	Y      float32 `json:"y"`
+	Z      float32 `json:"z"`
+	Yaw    float32 `json:"yaw"`
+	Pitch  float32 `json:"pitch"`
+	Hunger float32 `json:"hunger"`
 }
 
 type Resource struct {
@@ -66,10 +78,19 @@ type Resource struct {
 	Z    float32 `json:"z"`
 }
 
+type Mammoth struct {
+	ID string  `json:"id"`
+	X  float32 `json:"x"`
+	Y  float32 `json:"y"`
+	Z  float32 `json:"z"`
+	HP int     `json:"hp"`
+}
+
 type Snapshot struct {
 	Tick      uint64        `json:"tick"`
 	Players   []PlayerState `json:"players"`
 	Resources []Resource    `json:"resources"`
+	Mammoths  []Mammoth     `json:"mammoths"`
 }
 
 type ChatMessage struct {
@@ -93,4 +114,24 @@ type PickupItem struct {
 
 type InventoryUpdate struct {
 	Items map[string]int `json:"items"`
+}
+
+type EatFruit struct{}
+
+type Vector3 struct {
+	X float32 `json:"x"`
+	Y float32 `json:"y"`
+	Z float32 `json:"z"`
+}
+
+type ThrowSpear struct {
+	Dir Vector3 `json:"dir"`
+}
+
+type CraftItem struct {
+	Recipe string `json:"recipe"`
+}
+
+type HitMammoth struct {
+	MammothID string `json:"mammoth_id"`
 }

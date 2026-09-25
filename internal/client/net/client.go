@@ -42,10 +42,16 @@ type Client struct {
 	playersMu sync.RWMutex
 	players   map[string][]timedState
 
+	ownHungerMu sync.RWMutex
+	ownHunger   float32
+
 	chatCh chan protocol.ChatMessage
 
 	resourcesMu sync.RWMutex
 	resources   []protocol.Resource
+
+	mammothsMu sync.RWMutex
+	mammoths   []protocol.Mammoth
 
 	inventoryMu sync.RWMutex
 	inventory   map[string]int
@@ -87,6 +93,36 @@ func (c *Client) RTT() time.Duration {
 }
 
 func (c *Client) Chat() <-chan protocol.ChatMessage { return c.chatCh }
+
+func (c *Client) Hunger() float32 {
+	c.ownHungerMu.RLock()
+	defer c.ownHungerMu.RUnlock()
+	return c.ownHunger
+}
+
+func (c *Client) Mammoths() []protocol.Mammoth {
+	c.mammothsMu.RLock()
+	defer c.mammothsMu.RUnlock()
+	out := make([]protocol.Mammoth, len(c.mammoths))
+	copy(out, c.mammoths)
+	return out
+}
+
+func (c *Client) ThrowSpear(dir protocol.Vector3) error {
+	return c.send(protocol.TypeThrowSpear, protocol.ThrowSpear{Dir: dir})
+}
+
+func (c *Client) HitMammoth(id string) error {
+	return c.send(protocol.TypeHitMammoth, protocol.HitMammoth{MammothID: id})
+}
+
+func (c *Client) CraftItem(recipe string) error {
+	return c.send(protocol.TypeCraftItem, protocol.CraftItem{Recipe: recipe})
+}
+
+func (c *Client) EatFruit() error {
+	return c.send(protocol.TypeEatFruit, protocol.EatFruit{})
+}
 
 func (c *Client) Resources() []protocol.Resource {
 	c.resourcesMu.RLock()
@@ -354,6 +390,11 @@ func (c *Client) handle(env protocol.Envelope) {
 		var s protocol.Snapshot
 		_ = env.Decode(&s)
 		now := time.Now()
+
+		c.mu.RLock()
+		selfID := c.playerID
+		c.mu.RUnlock()
+
 		c.playersMu.Lock()
 		seen := make(map[string]struct{}, len(s.Players))
 		for _, p := range s.Players {
@@ -364,6 +405,12 @@ func (c *Client) handle(env protocol.Envelope) {
 				hist = hist[len(hist)-maxHistoryStates:]
 			}
 			c.players[p.ID] = hist
+
+			if p.ID == selfID {
+				c.ownHungerMu.Lock()
+				c.ownHunger = p.Hunger
+				c.ownHungerMu.Unlock()
+			}
 		}
 		for id := range c.players {
 			if _, ok := seen[id]; !ok {
@@ -375,6 +422,11 @@ func (c *Client) handle(env protocol.Envelope) {
 		c.resources = make([]protocol.Resource, len(s.Resources))
 		copy(c.resources, s.Resources)
 		c.resourcesMu.Unlock()
+
+		c.mammothsMu.Lock()
+		c.mammoths = make([]protocol.Mammoth, len(s.Mammoths))
+		copy(c.mammoths, s.Mammoths)
+		c.mammothsMu.Unlock()
 	case protocol.TypeChat:
 		var cm protocol.ChatMessage
 		_ = env.Decode(&cm)
