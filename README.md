@@ -133,3 +133,7 @@ Chain of Trust: каждый link — отдельный акт верифика
 ## Лицензия
 
 Apache License 2.0 — см. [LICENSE](LICENSE).
+
+---
+
+> **Status: paused.** Development frozen for diploma focus. Will resume after graduation. Architecture and code are stable at tag `v0.1-frozen`.
