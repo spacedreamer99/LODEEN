@@ -23,20 +23,27 @@ type Rocket struct {
 	lastLogAt time.Time
 	fuelAccum float32
 	TargetUp protocol.Vector3
+	Apoapsis  float32
+	Periapsis float32
+	Speed     float32
+	Altitude  float32
+	TargetVelocity float32
+	InfiniteFuel bool
+	AutoPilot string
 }
 
 const (
 	rocketMaxFuel     = 100
-	rocketThrustAccel = 100.0 // ускорение при полной тяге
-	rocketFuelBurn    = 5.0   // единиц топлива в секунду при полной тяге
-	rocketGravity     = 50.0  // g на поверхности (GM = g * R²)
-	orbitHeight       = 200.0 // высота выхода на орбиту
-	atmosphereHeight  = 60.0  // высота атмосферы
-	atmoDensityCoef   = 0.02  // коэфф. сопротивления
-	atmoScaleHeight   = 15.0  // высота, где плотность падает в e раз
-	steerRate         = 3.0   // скорость поворота носа (рад/сек)
-	maxSpeedSoft      = 250.0 // мягкий лимит (сверх — тормозим)
-	maxGravity        = 500.0 // защита от r → 0
+	rocketThrustAccel = 50.0  // чуть выше g=40 — медленный контролируемый подъём
+	rocketFuelBurn    = 5.0
+	rocketGravity     = 40.0
+	orbitHeight       = 150.0
+	atmosphereHeight  = 50.0
+	atmoDensityCoef   = 0.02
+	atmoScaleHeight   = 12.0
+	steerRate         = 3.0
+	maxSpeedSoft      = 30.0  // жёстко, нельзя превысить v_esc
+	maxGravity        = 500.0
 )
 
 func (s *Server) handlePlaceRocket(c *Client, p protocol.PlaceRocket) {
@@ -125,10 +132,60 @@ func (s *Server) handleRocketInput(c *Client, p protocol.RocketInput) {
 	for _, r := range s.rockets {
 		if r.OwnerID == c.ID && r.Piloted {
 			r.Thrust = p.Thrust
-			r.TargetUp = protocol.Vector3{X: p.TargetUpX, Y: p.TargetUpY, Z: p.TargetUpZ}
+			r.AutoPilot = p.AutoPilot
+			// Если автопилот выключен — берём TargetUp с клиента (мышь).
+			if p.AutoPilot == "" {
+				r.TargetUp = protocol.Vector3{X: p.TargetUpX, Y: p.TargetUpY, Z: p.TargetUpZ}
+			}
+			c.mu.RLock()
+			r.InfiniteFuel = c.infiniteFuel
+			c.mu.RUnlock()
+			if r.InfiniteFuel {
+				r.Fuel = r.MaxFuel
+			}
 			return
 		}
 	}
+}
+
+// orbitalParams — apoapsis и periapsis через удельную орбитальную энергию.
+// Возвращает высоты над поверхностью (может быть отрицательной для periapsis
+// если траектория пересекает планету). Для гиперболических орбит возвращает (0, 0).
+func orbitalParams(pos, vel protocol.Vector3) (apo, peri, speed, alt, targetV float32) {
+	r2 := pos.X*pos.X + pos.Y*pos.Y + pos.Z*pos.Z
+	r := float32(math.Sqrt(float64(r2)))
+	v2 := vel.X*vel.X + vel.Y*vel.Y + vel.Z*vel.Z
+	speed = float32(math.Sqrt(float64(v2)))
+	alt = r - protocol.PlanetRadius
+
+	mu := float32(rocketGravity) * float32(protocol.PlanetRadius) * float32(protocol.PlanetRadius)
+
+	// Целевая скорость круговой орбиты на текущей высоте.
+	if r > 1 {
+		targetV = float32(math.Sqrt(float64(mu / r)))
+	}
+
+	if r < 1 {
+		return 0, 0, speed, alt, targetV
+	}
+
+	E := v2/2 - mu/r
+	if E >= 0 {
+		// параболическая или гиперболическая — орбиты нет
+		return 0, 0, speed, alt, targetV
+	}
+
+	a := -mu / (2 * E)
+	rv := pos.X*vel.X + pos.Y*vel.Y + pos.Z*vel.Z
+	k := v2 - mu/r
+	ex := (k*pos.X - rv*vel.X) / mu
+	ey := (k*pos.Y - rv*vel.Y) / mu
+	ez := (k*pos.Z - rv*vel.Z) / mu
+	e := float32(math.Sqrt(float64(ex*ex + ey*ey + ez*ez)))
+
+	apo = a*(1+e) - protocol.PlanetRadius
+	peri = a*(1-e) - protocol.PlanetRadius
+	return
 }
 
 func (s *Server) tickRockets(dt float32) {
@@ -146,6 +203,50 @@ func (s *Server) tickRockets(dt float32) {
 			r.Vel = protocol.Vector3{}
 			r.Thrust = 0
 			continue
+		}
+
+		// Автопилот — вычисляет TargetUp по вектору скорости/позиции.
+		if r.AutoPilot != "" {
+			var target protocol.Vector3
+			vLen := float32(math.Sqrt(float64(r.Vel.X*r.Vel.X + r.Vel.Y*r.Vel.Y + r.Vel.Z*r.Vel.Z)))
+			rLen := float32(math.Sqrt(float64(r.Pos.X*r.Pos.X + r.Pos.Y*r.Pos.Y + r.Pos.Z*r.Pos.Z)))
+
+			switch r.AutoPilot {
+			case "prograde":
+				if vLen > 0.1 {
+					target = protocol.Vector3{X: r.Vel.X / vLen, Y: r.Vel.Y / vLen, Z: r.Vel.Z / vLen}
+				}
+			case "retrograde":
+				if vLen > 0.1 {
+					target = protocol.Vector3{X: -r.Vel.X / vLen, Y: -r.Vel.Y / vLen, Z: -r.Vel.Z / vLen}
+				}
+			case "radial_out":
+				if rLen > 0.1 {
+					target = protocol.Vector3{X: r.Pos.X / rLen, Y: r.Pos.Y / rLen, Z: r.Pos.Z / rLen}
+				}
+			case "radial_in":
+				if rLen > 0.1 {
+					target = protocol.Vector3{X: -r.Pos.X / rLen, Y: -r.Pos.Y / rLen, Z: -r.Pos.Z / rLen}
+				}
+			case "normal", "antinormal":
+				// cross(Pos, Vel) — нормаль к орбитальной плоскости.
+				nx := r.Pos.Y*r.Vel.Z - r.Pos.Z*r.Vel.Y
+				ny := r.Pos.Z*r.Vel.X - r.Pos.X*r.Vel.Z
+				nz := r.Pos.X*r.Vel.Y - r.Pos.Y*r.Vel.X
+				nl := float32(math.Sqrt(float64(nx*nx + ny*ny + nz*nz)))
+				if nl > 0.01 {
+					k := float32(1.0)
+					if r.AutoPilot == "antinormal" {
+						k = -1.0
+					}
+					target = protocol.Vector3{X: nx / nl * k, Y: ny / nl * k, Z: nz / nl * k}
+				}
+			}
+
+			// Если target получился — задаём как TargetUp.
+			if target.X != 0 || target.Y != 0 || target.Z != 0 {
+				r.TargetUp = target
+			}
 		}
 
 		// Плавный поворот Up к TargetUp с ограниченной угловой скоростью.
@@ -211,10 +312,12 @@ func (s *Server) tickRockets(dt float32) {
 			if absThrust < 0 {
 				absThrust = -absThrust
 			}
-			r.fuelAccum += rocketFuelBurn * dt * absThrust
-			for r.fuelAccum >= 1 && r.Fuel > 0 {
-				r.Fuel--
-				r.fuelAccum--
+			if !r.InfiniteFuel {
+				r.fuelAccum += rocketFuelBurn * dt * absThrust
+				for r.fuelAccum >= 1 && r.Fuel > 0 {
+					r.Fuel--
+					r.fuelAccum--
+				}
 			}
 			accel := rocketThrustAccel * r.Thrust
 			tx = r.Up.X * accel
@@ -279,14 +382,38 @@ func (s *Server) tickRockets(dt float32) {
 			}
 		}
 
+		// Орбитальные параметры (только для пилотируемых — экономим CPU).
+		if r.Piloted {
+			apo, peri, spd, alt, tv := orbitalParams(r.Pos, r.Vel)
+			r.Apoapsis = apo
+			r.Periapsis = peri
+			r.Speed = spd
+			r.Altitude = alt
+			r.TargetVelocity = tv
+
+			// Стабильная орбита: перигей выше атмосферы.
+			stable := peri > atmosphereHeight && alt > atmosphereHeight
+			if stable && !r.InOrbit {
+				r.InOrbit = true
+				s.log.Info("rocket reached stable orbit",
+					"id", r.ID,
+					"apo", apo, "peri", peri, "speed", spd, "alt", alt)
+			} else if !stable {
+				r.InOrbit = false
+			}
+		}
+
 		// Debug — раз в секунду.
 		if r.Piloted && time.Since(r.lastLogAt) > time.Second {
 			r.lastLogAt = time.Now()
 			s.log.Info("rocket tick",
 				"id", r.ID,
-				"pos_x", r.Pos.X, "pos_y", r.Pos.Y, "pos_z", r.Pos.Z,
-				"vel_x", r.Vel.X, "vel_y", r.Vel.Y, "vel_z", r.Vel.Z,
-				"dist", newDist, "fuel", r.Fuel, "thrust", r.Thrust)
+				"alt", r.Altitude,
+				"speed", r.Speed,
+				"apo", r.Apoapsis,
+				"peri", r.Periapsis,
+				"in_orbit", r.InOrbit,
+				"fuel", r.Fuel, "thrust", r.Thrust)
 		}
 
 		// Орбита — если высота превысила порог.
