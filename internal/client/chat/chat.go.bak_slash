@@ -33,12 +33,6 @@ func (c *Chat) Begin() {
 	c.Input = ""
 }
 
-// BeginWith открывает чат с предзаполненным текстом (например "/").
-func (c *Chat) BeginWith(prefix string) {
-	c.Open = true
-	c.Input = prefix
-}
-
 func (c *Chat) Cancel() {
 	c.Open = false
 	c.Input = ""

@@ -79,13 +79,6 @@ type Client struct {
 
 	done chan struct{}
 	wg   sync.WaitGroup
-
-	solarMu     sync.RWMutex
-	solar       []protocol.Solar
-	batteriesMu sync.RWMutex
-	batteries   []protocol.Battery
-	factoriesMu sync.RWMutex
-	factories   []protocol.Factory
 }
 
 func New(log *slog.Logger) *Client {
@@ -382,50 +375,6 @@ func (c *Client) EnterBoat(boatID string) error {
 	return c.send(protocol.TypeEnterBoat, protocol.EnterBoat{BoatID: boatID})
 }
 
-func (c *Client) Solar() []protocol.Solar {
-	c.solarMu.RLock()
-	defer c.solarMu.RUnlock()
-	out := make([]protocol.Solar, len(c.solar))
-	copy(out, c.solar)
-	return out
-}
-
-func (c *Client) Batteries() []protocol.Battery {
-	c.batteriesMu.RLock()
-	defer c.batteriesMu.RUnlock()
-	out := make([]protocol.Battery, len(c.batteries))
-	copy(out, c.batteries)
-	return out
-}
-
-func (c *Client) Factories() []protocol.Factory {
-	c.factoriesMu.RLock()
-	defer c.factoriesMu.RUnlock()
-	out := make([]protocol.Factory, len(c.factories))
-	copy(out, c.factories)
-	return out
-}
-
-func (c *Client) PlaceSolar(x, y, z, yaw float32) error {
-	return c.send(protocol.TypePlaceSolar, protocol.PlaceSolar{X: x, Y: y, Z: z, Yaw: yaw})
-}
-
-func (c *Client) PlaceBattery(x, y, z, yaw float32) error {
-	return c.send(protocol.TypePlaceBattery, protocol.PlaceBattery{X: x, Y: y, Z: z, Yaw: yaw})
-}
-
-func (c *Client) PlaceFactory(x, y, z, yaw float32) error {
-	return c.send(protocol.TypePlaceFactory, protocol.PlaceFactory{X: x, Y: y, Z: z, Yaw: yaw})
-}
-
-func (c *Client) OpenFactory(id string) error {
-	return c.send(protocol.TypeOpenFactory, protocol.OpenFactory{FactoryID: id})
-}
-
-func (c *Client) CraftFactory(factoryID, recipeID string) error {
-	return c.send(protocol.TypeCraftFactory, protocol.CraftFactory{FactoryID: factoryID, Recipe: recipeID})
-}
-
 func (c *Client) Projectiles() []protocol.MobProjectile {
 	c.projectilesMu.RLock()
 	defer c.projectilesMu.RUnlock()
@@ -631,21 +580,6 @@ func (c *Client) handle(env protocol.Envelope) {
 		c.projectiles = make([]protocol.MobProjectile, len(s.Projectiles))
 		copy(c.projectiles, s.Projectiles)
 		c.projectilesMu.Unlock()
-
-		c.solarMu.Lock()
-		c.solar = make([]protocol.Solar, len(s.Solar))
-		copy(c.solar, s.Solar)
-		c.solarMu.Unlock()
-
-		c.batteriesMu.Lock()
-		c.batteries = make([]protocol.Battery, len(s.Batteries))
-		copy(c.batteries, s.Batteries)
-		c.batteriesMu.Unlock()
-
-		c.factoriesMu.Lock()
-		c.factories = make([]protocol.Factory, len(s.Factories))
-		copy(c.factories, s.Factories)
-		c.factoriesMu.Unlock()
 	case protocol.TypeChat:
 		var cm protocol.ChatMessage
 		_ = env.Decode(&cm)

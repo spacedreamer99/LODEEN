@@ -1180,7 +1180,14 @@ func (a *App) drawHotbar() {
 	rl.DrawRectangleRec(panel, rl.NewColor(15, 15, 25, 200))
 	rl.DrawRectangleLinesEx(panel, 2, rl.NewColor(120, 120, 140, 255))
 
+	// Соберём первую строку из инвентаря
+	items := []string{}
 	inv := a.nc.Inventory()
+	for _, t := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch", "water", "liana", "leash", "house", "saddle", "boat", "solar", "battery", "factory", "steel", "gear", "circuit", "drone"} {
+		if n, ok := inv[t]; ok && n > 0 {
+			items = append(items, t)
+		}
+	}
 
 	for i := 0; i < slots; i++ {
 		cx := px + pad3 + int32(i)*cell
@@ -1193,11 +1200,8 @@ func (a *App) drawHotbar() {
 			rl.DrawRectangleLinesEx(rect, 3, rl.NewColor(255, 220, 90, 255))
 		}
 
-		typ := ""
-		if i < len(a.invSlots) {
-			typ = a.invSlots[i]
-		}
-		if typ != "" {
+		if i < len(items) {
+			typ := items[i]
 			col := itemColor(typ)
 			rl.DrawRectangleRec(rl.NewRectangle(float32(cx+9), float32(cy+9), float32(cell-20), float32(cell-20)), col)
 			if n := inv[typ]; n > 0 {
@@ -1891,10 +1895,18 @@ func (a *App) drawHeldItem() {
 	if a.flight == nil || a.flight.Mode != input.ModeSurvival {
 		return
 	}
-	typ := a.heldItem()
-	if typ == "" {
+	// Найдём предмет в selectedSlot
+	items := []string{}
+	inv := a.nc.Inventory()
+	for _, t := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch", "water", "liana", "leash", "house", "saddle", "boat", "solar", "battery", "factory", "steel", "gear", "circuit", "drone"} {
+		if n, ok := inv[t]; ok && n > 0 {
+			items = append(items, t)
+		}
+	}
+	if a.selectedSlot >= len(items) {
 		return
 	}
+	typ := items[a.selectedSlot]
 	col := itemColor(typ)
 
 	// Локальные оси камеры
