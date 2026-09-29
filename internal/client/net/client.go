@@ -421,10 +421,11 @@ func (c *Client) ExitRocket() error {
 	return c.send(protocol.TypeExitRocket, protocol.ExitRocket{})
 }
 
-func (c *Client) RocketInput(thrust, upX, upY, upZ float32) error {
+func (c *Client) RocketInput(thrust, upX, upY, upZ float32, autoPilot string) error {
 	return c.send(protocol.TypeRocketInput, protocol.RocketInput{
 		Thrust:    thrust,
 		TargetUpX: upX, TargetUpY: upY, TargetUpZ: upZ,
+		AutoPilot: autoPilot,
 	})
 }
 

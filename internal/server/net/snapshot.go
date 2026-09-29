@@ -125,18 +125,26 @@ func (s *Server) broadcastSnapshot() {
 	rockets := make([]protocol.Rocket, 0, len(s.rockets))
 	for _, r := range s.rockets {
 		rockets = append(rockets, protocol.Rocket{
-			ID:      r.ID,
-			X:       r.Pos.X,
-			Y:       r.Pos.Y,
-			Z:       r.Pos.Z,
-			DX:      r.Up.X,
-			DY:      r.Up.Y,
-			DZ:      r.Up.Z,
-			Fuel:    r.Fuel,
-			MaxFuel: r.MaxFuel,
-			Piloted: r.Piloted,
-			OwnerID: r.OwnerID,
-			InOrbit: r.InOrbit,
+			ID:        r.ID,
+			X:         r.Pos.X,
+			Y:         r.Pos.Y,
+			Z:         r.Pos.Z,
+			DX:        r.Up.X,
+			DY:        r.Up.Y,
+			DZ:        r.Up.Z,
+			Fuel:      r.Fuel,
+			MaxFuel:   r.MaxFuel,
+			Piloted:   r.Piloted,
+			OwnerID:   r.OwnerID,
+			InOrbit:   r.InOrbit,
+			Apoapsis:  r.Apoapsis,
+			Periapsis: r.Periapsis,
+			Speed:          r.Speed,
+			Altitude:       r.Altitude,
+			TargetVelocity: r.TargetVelocity,
+			VX:             r.Vel.X,
+			VY:             r.Vel.Y,
+			VZ:             r.Vel.Z,
 		})
 	}
 	s.rocketsMu.RUnlock()

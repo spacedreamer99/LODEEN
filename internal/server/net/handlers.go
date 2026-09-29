@@ -103,6 +103,40 @@ func (s *Server) handleMessage(c *Client, env *protocol.Envelope) {
 			c.log.Info("cheat: allinv", "count", len(allItems))
 			break
 		}
+		// Чит-команда /infuel — бесконечное топливо (toggle).
+		if cm.Text == "/infuel" {
+			c.mu.Lock()
+			c.infiniteFuel = !c.infiniteFuel
+			state := c.infiniteFuel
+			c.mu.Unlock()
+
+			msg := "infinite fuel: OFF"
+			if state {
+				msg = "infinite fuel: ON"
+			}
+			c.sendEnvelope(protocol.TypeChat, protocol.ChatMessage{
+				From: "server", Text: msg, TS: time.Now().UnixMilli(),
+			})
+			c.log.Info("cheat: infuel", "state", state)
+			break
+		}
+		// Чит-команда /infuel — бесконечное топливо (toggle).
+		if cm.Text == "/infuel" {
+			c.mu.Lock()
+			c.infiniteFuel = !c.infiniteFuel
+			state := c.infiniteFuel
+			c.mu.Unlock()
+
+			msg := "infinite fuel: OFF"
+			if state {
+				msg = "infinite fuel: ON"
+			}
+			c.sendEnvelope(protocol.TypeChat, protocol.ChatMessage{
+				From: "server", Text: msg, TS: time.Now().UnixMilli(),
+			})
+			c.log.Info("cheat: infuel", "state", state)
+			break
+		}
 		// Чит-команда /clearinv — очистить инвентарь.
 		if cm.Text == "/clearinv" {
 			c.mu.Lock()

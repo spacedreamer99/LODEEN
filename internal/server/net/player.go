@@ -30,6 +30,7 @@ type Client struct {
 	heldItem    string
 
 	closeOnce sync.Once
+	infiniteFuel bool
 }
 
 func (c *Client) State() protocol.PlayerState {

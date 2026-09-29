@@ -86,6 +86,17 @@ type App struct {
 	dragFrom     int
 	rocketID      string
 	rocketBoardedAt time.Time
+	hudRocket     protocol.Rocket
+	showOrbitMap  bool
+	orbitAzimuth   float32
+	orbitElevation float32
+	orbitDistance  float32
+	orbitInit      bool
+	autoPilot     string
+	rocketNoseX    float32
+	rocketNoseY    float32
+	rocketNoseZ    float32
+	rocketNoseInit bool
 }
 
 func New(cfg *config.Config, log *slog.Logger) *App {
@@ -671,6 +682,13 @@ func (a *App) draw() {
 		if a.showFactory {
 			a.drawFactory()
 		}
+		if a.rocketID != "" {
+			a.drawRocketHUD()
+			if a.showOrbitMap {
+				a.drawOrbitMap()
+			}
+			a.drawNavBall()
+		}
 	}
 
 	rl.EndTextureMode()
@@ -838,6 +856,29 @@ func (a *App) updatePilotedRocket(dt float32) bool {
 	)
 	a.flight.Vel = rl.NewVector3(0, 0, 0)
 
+	// Сохранить данные для HUD.
+	a.hudRocket = *found
+
+	// Инициализация носа ракеты при первом кадре.
+	// Считаем нормаль от центра планеты — не доверяем found.DX/DY/DZ.
+	if !a.rocketNoseInit {
+		rLen := float32(math.Sqrt(float64(found.X*found.X + found.Y*found.Y + found.Z*found.Z)))
+		if rLen > 0.01 {
+			a.rocketNoseX = found.X / rLen
+			a.rocketNoseY = found.Y / rLen
+			a.rocketNoseZ = found.Z / rLen
+		} else {
+			a.rocketNoseX = 0
+			a.rocketNoseY = 1
+			a.rocketNoseZ = 0
+		}
+		a.rocketNoseInit = true
+		a.log.Info("rocket nose initialized",
+			"x", a.rocketNoseX,
+			"y", a.rocketNoseY,
+			"z", a.rocketNoseZ)
+	}
+
 	// Тяга по Space.
 	var thrust float32
 	if rl.IsKeyDown(rl.KeySpace) {
@@ -847,21 +888,100 @@ func (a *App) updatePilotedRocket(dt float32) bool {
 		thrust = -1.0
 	}
 
-	// Куда направлена камера — туда и хотим направить нос ракеты.
-	fwNow := a.flight.Forward()
-	_ = a.nc.RocketInput(thrust, fwNow.X, fwNow.Y, fwNow.Z)
+	// WASD — вращение носа ракеты в локальной системе камеры.
+	{
+		upLocal := a.camera.Up
+		fwLocal := a.flight.Forward()
+		rightLocal := rl.Vector3Normalize(rl.Vector3CrossProduct(fwLocal, upLocal))
+		upTrue := rl.Vector3Normalize(rl.Vector3CrossProduct(rightLocal, fwLocal))
+
+		const noseRate = 1.8
+		angleStep := noseRate * dt
+
+		nose := rl.NewVector3(a.rocketNoseX, a.rocketNoseY, a.rocketNoseZ)
+		rotated := false
+		if rl.IsKeyDown(rl.KeyW) {
+			nose = rotateAroundAxis(nose, rightLocal, -angleStep)
+			rotated = true
+		}
+		if rl.IsKeyDown(rl.KeyS) {
+			nose = rotateAroundAxis(nose, rightLocal, angleStep)
+			rotated = true
+		}
+		if rl.IsKeyDown(rl.KeyA) {
+			nose = rotateAroundAxis(nose, upTrue, angleStep)
+			rotated = true
+		}
+		if rl.IsKeyDown(rl.KeyD) {
+			nose = rotateAroundAxis(nose, upTrue, -angleStep)
+			rotated = true
+		}
+		if rotated {
+			nose = rl.Vector3Normalize(nose)
+			a.rocketNoseX = nose.X
+			a.rocketNoseY = nose.Y
+			a.rocketNoseZ = nose.Z
+			a.log.Info("rocket nose rotated",
+				"x", nose.X, "y", nose.Y, "z", nose.Z)
+		}
+	}
+
+	// Отправляем желаемое направление носа ракеты.
+	_ = a.nc.RocketInput(thrust, a.rocketNoseX, a.rocketNoseY, a.rocketNoseZ, a.autoPilot)
+
+	// Автопилот: G prograde, H retrograde, J radial-out, K radial-in,
+	// N normal, B antinormal, X off.
+	if rl.IsKeyPressed(rl.KeyG) {
+		a.autoPilot = "prograde"
+	}
+	if rl.IsKeyPressed(rl.KeyH) {
+		a.autoPilot = "retrograde"
+	}
+	if rl.IsKeyPressed(rl.KeyJ) {
+		a.autoPilot = "radial_out"
+	}
+	if rl.IsKeyPressed(rl.KeyK) {
+		a.autoPilot = "radial_in"
+	}
+	if rl.IsKeyPressed(rl.KeyN) {
+		a.autoPilot = "normal"
+	}
+	if rl.IsKeyPressed(rl.KeyB) {
+		a.autoPilot = "antinormal"
+	}
+	if rl.IsKeyPressed(rl.KeyX) {
+		a.autoPilot = ""
+	}
+
+	// M — карта орбиты.
+	if rl.IsKeyPressed(rl.KeyM) {
+		a.showOrbitMap = !a.showOrbitMap
+		if a.showOrbitMap {
+			a.orbitInit = false
+			rl.EnableCursor()
+			rl.ShowCursor()
+		} else {
+			rl.DisableCursor()
+		}
+	}
 
 	// E — выйти.
 	if rl.IsKeyPressed(rl.KeyE) {
 		_ = a.nc.ExitRocket()
 		a.rocketID = ""
+		a.showOrbitMap = false
+		a.rocketNoseInit = false
 		a.log.Info("exit rocket sent")
 		return false
 	}
 
-	// Обработка вращения мышью — сначала, потом строим камеру.
-	mdRocket := rl.GetMouseDelta()
-	a.flight.UpdateLookOnly(dt, mdRocket)
+	// Если карта открыта — ракета НЕ крутится мышью.
+	if a.showOrbitMap {
+		a.updateOrbitMapInput()
+	} else {
+		mdRocket := rl.GetMouseDelta()
+		a.flight.UpdateLookOnly(dt, mdRocket)
+	}
 
 	// Камера следует за ракетой.
 	fw := a.flight.Forward()
@@ -887,6 +1007,494 @@ func (a *App) updateContract() {
 		rl.DisableCursor()
 		return
 	}
+}
+
+// drawRocketHUD — оверлей с орбитальной информацией, пока сидим в ракете.
+// predictTrajectory — быстрая симуляция орбиты на N шагов вперёд.
+// Копирует серверную физику (без атмосферы для простоты).
+func predictTrajectory(pos, vel protocol.Vector3, dt float32, steps int) []protocol.Vector3 {
+	const R = 50.0
+	const G = 40.0
+	mu := float32(G * R * R)
+
+	p, v := pos, vel
+	pts := make([]protocol.Vector3, 0, steps)
+	for i := 0; i < steps; i++ {
+		r2 := p.X*p.X + p.Y*p.Y + p.Z*p.Z
+		r := float32(math.Sqrt(float64(r2)))
+		if r < 1 {
+			break
+		}
+		g := mu / r2
+		ax := -p.X / r * g
+		ay := -p.Y / r * g
+		az := -p.Z / r * g
+		v.X += ax * dt
+		v.Y += ay * dt
+		v.Z += az * dt
+		p.X += v.X * dt
+		p.Y += v.Y * dt
+		p.Z += v.Z * dt
+		r2 = p.X*p.X + p.Y*p.Y + p.Z*p.Z
+		r = float32(math.Sqrt(float64(r2)))
+		if r < R {
+			break
+		}
+		pts = append(pts, p)
+	}
+	return pts
+}
+
+// drawOrbitMap — 2D проекция орбиты сверху.
+// updateOrbitMapInput — управление орбитальной камерой (drag + zoom).
+func (a *App) updateOrbitMapInput() {
+	md := rl.GetMouseDelta()
+	if rl.IsMouseButtonDown(rl.MouseLeftButton) {
+		a.orbitAzimuth += md.X * 0.008
+		a.orbitElevation += md.Y * 0.008
+		if a.orbitElevation < -1.4 {
+			a.orbitElevation = -1.4
+		}
+		if a.orbitElevation > 1.4 {
+			a.orbitElevation = 1.4
+		}
+	}
+	wheel := rl.GetMouseWheelMove()
+	if wheel != 0 {
+		a.orbitDistance *= 1.0 - wheel*0.15
+		if a.orbitDistance < 80 {
+			a.orbitDistance = 80
+		}
+		if a.orbitDistance > 5000 {
+			a.orbitDistance = 5000
+		}
+	}
+}
+
+// drawOrbitMap — 3D вид на орбиту вокруг планеты.
+// rotateAroundAxis — поворот вектора вокруг оси (формула Родрига).
+func rotateAroundAxis(v, axis rl.Vector3, angle float32) rl.Vector3 {
+	cosA := float32(math.Cos(float64(angle)))
+	sinA := float32(math.Sin(float64(angle)))
+	dot := v.X*axis.X + v.Y*axis.Y + v.Z*axis.Z
+	cx := axis.Y*v.Z - axis.Z*v.Y
+	cy := axis.Z*v.X - axis.X*v.Z
+	cz := axis.X*v.Y - axis.Y*v.X
+	return rl.NewVector3(
+		v.X*cosA+cx*sinA+axis.X*dot*(1-cosA),
+		v.Y*cosA+cy*sinA+axis.Y*dot*(1-cosA),
+		v.Z*cosA+cz*sinA+axis.Z*dot*(1-cosA),
+	)
+}
+
+func (a *App) drawOrbitMap() {
+	r := a.hudRocket
+	if r.ID == "" {
+		return
+	}
+
+	// Инициализация камеры при первом открытии.
+	if !a.orbitInit {
+		a.orbitInit = true
+		a.orbitAzimuth = 0.6
+		a.orbitElevation = 0.5
+		dist := r.Altitude * 2.5
+		if dist < 200 {
+			dist = 200
+		}
+		if dist > 1500 {
+			dist = 1500
+		}
+		a.orbitDistance = dist
+	}
+
+	// Камера вокруг центра планеты.
+	cosEl := float32(math.Cos(float64(a.orbitElevation)))
+	camPos := rl.NewVector3(
+		a.orbitDistance*cosEl*float32(math.Cos(float64(a.orbitAzimuth))),
+		a.orbitDistance*float32(math.Sin(float64(a.orbitElevation))),
+		a.orbitDistance*cosEl*float32(math.Sin(float64(a.orbitAzimuth))),
+	)
+
+	mapCam := rl.Camera3D{
+		Position:   camPos,
+		Target:     rl.NewVector3(0, 0, 0),
+		Up:         rl.NewVector3(0, 1, 0),
+		Fovy:       60,
+		Projection: rl.CameraPerspective,
+	}
+
+	// Фон.
+	sw := int32(rl.GetScreenWidth())
+	sh := int32(rl.GetScreenHeight())
+	rl.DrawRectangle(0, 0, sw, sh, rl.NewColor(3, 5, 15, 255))
+
+	rl.BeginMode3D(mapCam)
+
+	// Планета.
+	rl.DrawSphere(rl.NewVector3(0, 0, 0), protocol.PlanetRadius, rl.NewColor(50, 80, 130, 255))
+	rl.DrawSphereWires(rl.NewVector3(0, 0, 0), protocol.PlanetRadius, 16, 16, rl.NewColor(80, 120, 180, 200))
+	// Атмосфера.
+	rl.DrawSphereWires(rl.NewVector3(0, 0, 0), protocol.PlanetRadius+50, 16, 16, rl.NewColor(80, 100, 140, 100))
+
+	// Оси (для ориентации).
+	rl.DrawLine3D(rl.NewVector3(0, 0, 0), rl.NewVector3(protocol.PlanetRadius*2, 0, 0), rl.NewColor(120, 50, 50, 180))
+	rl.DrawLine3D(rl.NewVector3(0, 0, 0), rl.NewVector3(0, protocol.PlanetRadius*2, 0), rl.NewColor(50, 120, 50, 180))
+	rl.DrawLine3D(rl.NewVector3(0, 0, 0), rl.NewVector3(0, 0, protocol.PlanetRadius*2), rl.NewColor(50, 50, 120, 180))
+
+	// Траектория.
+	pos := protocol.Vector3{X: r.X, Y: r.Y, Z: r.Z}
+	vel := protocol.Vector3{X: r.VX, Y: r.VY, Z: r.VZ}
+	traj := predictTrajectory(pos, vel, 0.1, 800)
+	yellow := rl.NewColor(230, 200, 60, 255)
+	for i := 1; i < len(traj); i++ {
+		p1 := rl.NewVector3(traj[i-1].X, traj[i-1].Y, traj[i-1].Z)
+		p2 := rl.NewVector3(traj[i].X, traj[i].Y, traj[i].Z)
+		rl.DrawLine3D(p1, p2, yellow)
+	}
+
+	// Ракета.
+	rp := rl.NewVector3(r.X, r.Y, r.Z)
+	rl.DrawSphere(rp, 4, rl.NewColor(100, 255, 100, 255))
+	rl.DrawSphereWires(rp, 4, 8, 8, rl.White)
+
+	// Вектор скорости.
+	vLen := float32(math.Sqrt(float64(r.VX*r.VX + r.VY*r.VY + r.VZ*r.VZ)))
+	if vLen > 0.1 {
+		vEnd := rl.NewVector3(
+			r.X+r.VX/vLen*30,
+			r.Y+r.VY/vLen*30,
+			r.Z+r.VZ/vLen*30,
+		)
+		rl.DrawLine3D(rp, vEnd, rl.NewColor(255, 80, 80, 255))
+	}
+
+	// Up ракеты.
+	upEnd := rl.NewVector3(
+		r.X+r.DX*15,
+		r.Y+r.DY*15,
+		r.Z+r.DZ*15,
+	)
+	rl.DrawLine3D(rp, upEnd, rl.NewColor(80, 200, 255, 255))
+
+	rl.EndMode3D()
+
+	// Оверлей поверх 3D.
+	fonts.Draw("ORBITAL MAP", 30, 30, 28, rl.NewColor(150, 200, 255, 255))
+
+	pad := int32(30)
+	lineY := pad + 50
+	lineH := int32(24)
+
+	fonts.Draw("FUEL: "+itoa(r.Fuel)+" / "+itoa(r.MaxFuel), pad, lineY, 18, rl.RayWhite)
+	lineY += lineH
+
+	fonts.Draw("ALT: "+itoa(int(r.Altitude))+" m", pad, lineY, 18, rl.RayWhite)
+	lineY += lineH
+
+	fonts.Draw("VEL: "+itoa(int(r.Speed))+" m/s", pad, lineY, 18, rl.RayWhite)
+	lineY += lineH
+
+	apoColor := rl.RayWhite
+	if r.Apoapsis > 0 {
+		apoColor = rl.NewColor(150, 200, 255, 255)
+	}
+	fonts.Draw("APO: "+itoa(int(r.Apoapsis))+" m", pad, lineY, 18, apoColor)
+	lineY += lineH
+
+	periColor := rl.NewColor(220, 60, 60, 255)
+	if r.Periapsis > 60 {
+		periColor = rl.NewColor(80, 220, 100, 255)
+	} else if r.Periapsis > 0 {
+		periColor = rl.NewColor(230, 200, 60, 255)
+	}
+	fonts.Draw("PER: "+itoa(int(r.Periapsis))+" m", pad, lineY, 18, periColor)
+
+	// Подсказка снизу: управление камерой.
+	hint := "WASD: nose   |   LMB drag: camera   |   Wheel: zoom   |   M: close"
+	hintW := fonts.Measure(hint, 18)
+	fonts.Draw(hint, (sw-hintW)/2, sh-40, 18, rl.LightGray)
+
+	// Подсказки автопилота — внизу справа.
+	apX := int32(30)
+	apY := sh - int32(220)
+	fonts.Draw("AUTOPILOT", apX, apY, 16, rl.NewColor(150, 200, 255, 255))
+	apY += 22
+
+	rows := []struct {
+		key   string
+		label string
+		col   rl.Color
+	}{
+		{"G", "prograde", rl.NewColor(80, 220, 100, 255)},
+		{"H", "retrograde", rl.NewColor(230, 140, 40, 255)},
+		{"J", "radial+", rl.NewColor(230, 200, 60, 255)},
+		{"K", "radial-", rl.NewColor(180, 100, 220, 255)},
+		{"N", "normal", rl.NewColor(100, 180, 255, 255)},
+		{"B", "antinormal", rl.NewColor(100, 180, 255, 255)},
+		{"X", "off", rl.LightGray},
+	}
+	for _, r := range rows {
+		line := r.key + "  " + r.label
+		fonts.Draw(line, apX+10, apY, 14, r.col)
+		apY += 20
+	}
+
+	// Текущий автопилот.
+	cur := "MANUAL"
+	if a.autoPilot != "" {
+		cur = a.autoPilot
+	}
+	fonts.Draw("current: "+cur, apX, apY+8, 16, rl.RayWhite)
+}
+
+
+// drawNavBall — простой 2D навбол: показывает направление носа ракеты
+// и целевые векторы (prograde/retrograde/radial/normal).
+func (a *App) drawNavBall() {
+	r := a.hudRocket
+	if r.ID == "" {
+		return
+	}
+	if a.debugFrame%60 == 0 {
+		a.log.Info("navball draw",
+			"id", r.ID,
+			"dx", r.DX, "dy", r.DY, "dz", r.DZ,
+			"vx", r.VX, "vy", r.VY, "vz", r.VZ)
+	}
+
+	sw := int32(rl.GetScreenWidth())
+	sh := int32(rl.GetScreenHeight())
+
+	// Навбол — в правом нижнем углу.
+	const radius = int32(90)
+	cx := sw - radius - 30
+	cy := sh - radius - 30
+
+	// Фон.
+	rl.DrawCircle(cx, cy, float32(radius), rl.NewColor(20, 30, 50, 220))
+	rl.DrawCircleLines(cx, cy, float32(radius), rl.NewColor(120, 180, 240, 255))
+	rl.DrawCircleLines(cx, cy, float32(radius)*0.66, rl.NewColor(80, 100, 140, 180))
+	rl.DrawCircleLines(cx, cy, float32(radius)*0.33, rl.NewColor(80, 100, 140, 180))
+	// Горизонт (горизонтальная линия).
+	rl.DrawLine(cx-int32(float32(radius)*0.9), cy, cx+int32(float32(radius)*0.9), cy, rl.NewColor(120, 140, 180, 220))
+
+	// Локальная система координат ракеты:
+	// forward = Up ракеты (куда смотрит нос)
+	// right = cross(forward, worldUp)
+	// trueUp = cross(right, forward)
+	fX, fY, fZ := r.DX, r.DY, r.DZ
+
+	// worldUp — нормаль планеты из позиции ракеты.
+	pLen := float32(math.Sqrt(float64(r.X*r.X + r.Y*r.Y + r.Z*r.Z)))
+	if pLen < 0.01 {
+		return
+	}
+	wX, wY, wZ := r.X/pLen, r.Y/pLen, r.Z/pLen
+
+	// right = cross(forward, worldUp)
+	rX := fY*wZ - fZ*wY
+	rY := fZ*wX - fX*wZ
+	rZ := fX*wY - fY*wX
+	rLen := float32(math.Sqrt(float64(rX*rX + rY*rY + rZ*rZ)))
+	if rLen < 0.01 {
+		return
+	}
+	rX /= rLen
+	rY /= rLen
+	rZ /= rLen
+
+	// trueUp = cross(right, forward)
+	tuX := rY*fZ - rZ*fY
+	tuY := rZ*fX - rX*fZ
+	tuZ := rX*fY - rY*fX
+
+	// Функция проекции вектора на 2D навбол.
+	project := func(vx, vy, vz float32) (int32, int32, bool) {
+		// Компоненты в локальном фрейме.
+		fwd := vx*fX + vy*fY + vz*fZ
+		rgt := vx*rX + vy*rY + vz*rZ
+		upv := vx*tuX + vy*tuY + vz*tuZ
+		// Если вектор "за" навболом — не рисуем.
+		if fwd < -0.2 {
+			return 0, 0, false
+		}
+		px := cx + int32(rgt*float32(radius))
+		py := cy - int32(upv*float32(radius))
+		return px, py, true
+	}
+
+	// Текущая позиция носа — точка в центре (центр навбола = forward).
+	rl.DrawCircle(cx, cy, 3, rl.NewColor(80, 220, 255, 255))
+
+	// Хелпер: нарисовать цель на навболе.
+	drawTarget := func(vx, vy, vz float32, col rl.Color, label string) {
+		vLen := float32(math.Sqrt(float64(vx*vx + vy*vy + vz*vz)))
+		if vLen < 0.01 {
+			return
+		}
+		px, py, ok := project(vx/vLen, vy/vLen, vz/vLen)
+		if !ok {
+			return
+		}
+		rl.DrawCircleLines(px, py, 6, col)
+		rl.DrawCircleLines(px, py, 7, col)
+		if label != "" {
+			fonts.Draw(label, px+8, py-8, 12, col)
+		}
+	}
+
+	// Prograde (по скорости).
+	vLen := float32(math.Sqrt(float64(r.VX*r.VX + r.VY*r.VY + r.VZ*r.VZ)))
+	if vLen > 0.5 {
+		// Prograde — зелёный
+		drawTarget(r.VX, r.VY, r.VZ, rl.NewColor(80, 220, 100, 255), "PRO")
+		// Retrograde — оранжевый
+		drawTarget(-r.VX, -r.VY, -r.VZ, rl.NewColor(230, 140, 40, 255), "RET")
+	}
+
+	// Radial out (от планеты) — жёлтый.
+	drawTarget(wX, wY, wZ, rl.NewColor(230, 200, 60, 255), "RAD+")
+	// Radial in — фиолетовый.
+	drawTarget(-wX, -wY, -wZ, rl.NewColor(180, 100, 220, 255), "RAD-")
+
+	// Normal (N) / Antinormal (B) — голубой.
+	nx := r.Y*r.VZ - r.Z*r.VY
+	ny := r.Z*r.VX - r.X*r.VZ
+	nz := r.X*r.VY - r.Y*r.VX
+	nl := float32(math.Sqrt(float64(nx*nx + ny*ny + nz*nz)))
+	if nl > 0.1 {
+		drawTarget(nx/nl, ny/nl, nz/nl, rl.NewColor(100, 180, 255, 255), "NRM")
+		drawTarget(-nx/nl, -ny/nl, -nz/nl, rl.NewColor(100, 180, 255, 255), "ANM")
+	}
+
+	// Текущий автопилот — под навболом.
+	label := "MANUAL"
+	col := rl.LightGray
+	switch a.autoPilot {
+	case "prograde":
+		label = "PROGRADE"
+		col = rl.NewColor(80, 220, 100, 255)
+	case "retrograde":
+		label = "RETROGRADE"
+		col = rl.NewColor(230, 140, 40, 255)
+	case "radial_out":
+		label = "RADIAL+"
+		col = rl.NewColor(230, 200, 60, 255)
+	case "radial_in":
+		label = "RADIAL-"
+		col = rl.NewColor(180, 100, 220, 255)
+	case "normal":
+		label = "NORMAL"
+		col = rl.NewColor(100, 180, 255, 255)
+	case "antinormal":
+		label = "ANTINORMAL"
+		col = rl.NewColor(100, 180, 255, 255)
+	}
+	lw := fonts.Measure(label, 16)
+	fonts.Draw(label, cx-lw/2, cy+radius+8, 16, col)
+}
+
+func (a *App) drawRocketHUD() {
+	if a.rocketID == "" {
+		return
+	}
+	r := a.hudRocket
+	if r.ID != a.rocketID {
+		return
+	}
+
+	sw := int32(rl.GetScreenWidth())
+	const panelW = int32(360)
+	const panelH = int32(200)
+	px := sw - panelW - 20
+	py := int32(20)
+
+	// Отдельно: проверка ESCAPE — когда apo/peri = 0 и alt выше орбиты.
+	escaping := r.Apoapsis == 0 && r.Altitude > 60 && r.Speed > 20
+
+	// Панель.
+	bg := rl.NewColor(10, 15, 30, 220)
+	if r.InOrbit {
+		bg = rl.NewColor(15, 30, 15, 230)
+	} else if escaping {
+		bg = rl.NewColor(40, 15, 15, 230)
+	}
+	panel := rl.NewRectangle(float32(px), float32(py), float32(panelW), float32(panelH))
+	rl.DrawRectangleRec(panel, bg)
+	border := rl.NewColor(120, 180, 240, 255)
+	if r.InOrbit {
+		border = rl.NewColor(80, 220, 100, 255)
+	} else if escaping {
+		border = rl.NewColor(220, 60, 60, 255)
+	}
+	rl.DrawRectangleLinesEx(panel, 2, border)
+
+	title := "ROCKET"
+	if r.InOrbit {
+		title = "ORBIT ACHIEVED"
+	} else if escaping {
+		title = "ESCAPE TRAJECTORY"
+	}
+	fonts.Draw(title, px+12, py+8, 20, border)
+
+	// Строки.
+	pad := int32(12)
+	lineY := py + 40
+	lineH := int32(20)
+
+	fuelStr := "FUEL: " + itoa(r.Fuel) + " / " + itoa(r.MaxFuel)
+	fonts.Draw(fuelStr, px+pad, lineY, 16, rl.RayWhite)
+	lineY += lineH
+
+	altStr := "ALT: " + itoa(int(r.Altitude)) + " m"
+	fonts.Draw(altStr, px+pad, lineY, 16, rl.RayWhite)
+	lineY += lineH
+
+	spdStr := "VEL: " + itoa(int(r.Speed)) + " m/s"
+	spdColor := rl.RayWhite
+	if r.TargetVelocity > 0 {
+		spdStr += "  (orbit: " + itoa(int(r.TargetVelocity)) + ")"
+		// Цвет: зелёный если 85-115% от target, жёлтый если 50-85% или 115-150%, красный иначе.
+		ratio := r.Speed / r.TargetVelocity
+		switch {
+		case ratio >= 0.85 && ratio <= 1.15:
+			spdColor = rl.NewColor(80, 220, 100, 255) // точно
+		case ratio >= 0.5 && ratio <= 1.5:
+			spdColor = rl.NewColor(230, 200, 60, 255) // близко
+		default:
+			spdColor = rl.NewColor(220, 60, 60, 255) // не то
+		}
+	}
+	fonts.Draw(spdStr, px+pad, lineY, 16, spdColor)
+	lineY += lineH
+
+	apoStr := "APO: " + itoa(int(r.Apoapsis)) + " m"
+	periStr := "PER: " + itoa(int(r.Periapsis)) + " m"
+	apoColor := rl.LightGray
+	periColor := rl.LightGray
+	if r.Apoapsis > 0 {
+		apoColor = rl.RayWhite
+	}
+	if r.Periapsis > 60.0 { // atmosphereHeight (dup on client)
+		periColor = rl.NewColor(80, 220, 100, 255)
+	} else if r.Periapsis > 0 {
+		periColor = rl.NewColor(230, 200, 60, 255)
+	} else {
+		periColor = rl.NewColor(220, 60, 60, 255)
+	}
+	fonts.Draw(apoStr, px+pad, lineY, 16, apoColor)
+	fonts.Draw(periStr, px+pad+140, lineY, 16, periColor)
+	lineY += lineH
+
+	// Подсказка.
+	hint := "WASD nose | Space thrust | Ctrl retro | M map | E exit"
+	hint2 := "Auto: G=prograde  H=retro  J=radial+  K=radial-  N=normal  B=anti  X=off"
+	if escaping {
+		hint = "TOO FAST — turn sideways, release Space"
+	}
+	fonts.Draw(hint2, px+pad, py+panelH-40, 11, rl.Gray)
+	fonts.Draw(hint, px+pad, py+panelH-24, 12, rl.Gray)
 }
 
 func (a *App) drawContract() {
