@@ -74,16 +74,6 @@ type App struct {
 	lastMouse    string
 	lastLogAt    time.Time
 	lastPos      rl.Vector3
-	contractMobID string
-	contractPos   rl.Vector3
-	showContract  bool
-	contractOpenedAt time.Time
-	factoryID     string
-	showFactory   bool
-	factoryOpenedAt time.Time
-	invSlots     [256]string
-	dragging     bool
-	dragFrom     int
 }
 
 func New(cfg *config.Config, log *slog.Logger) *App {
@@ -204,16 +194,6 @@ func (a *App) updateMenu() {
 }
 
 func (a *App) updatePlaying(dt float32) {
-	a.syncInvSlots()
-	// Диалоги блокируют всё остальное.
-	if a.showContract {
-		a.updateContract()
-		return
-	}
-	if a.showFactory {
-		a.updateFactory()
-		return
-	}
 	// Обновляем HP из сети.
 	if a.nc != nil {
 		if hp := a.nc.OwnHP(); hp > 0 || a.hpReceived {
@@ -284,10 +264,6 @@ func (a *App) updatePlaying(dt float32) {
 	}
 	if rl.IsKeyPressed(rl.KeyT) {
 		a.chat.Begin()
-		return
-	}
-	if rl.IsKeyPressed(rl.KeySlash) {
-		a.chat.BeginWith("/")
 		return
 	}
 	if rl.IsKeyPressed(rl.KeyF) {
@@ -391,24 +367,6 @@ func (a *App) updatePlaying(dt float32) {
 				a.log.Warn("place house", "err", err)
 			}
 			a.log.Info("place house sent (LMB)")
-		case "solar":
-			x, y, z, yaw := a.placeForward(5.0)
-			if err := a.nc.PlaceSolar(x, y, z, yaw); err != nil {
-				a.log.Warn("place solar", "err", err)
-			}
-			a.log.Info("place solar sent (LMB)")
-		case "battery":
-			x, y, z, yaw := a.placeForward(5.0)
-			if err := a.nc.PlaceBattery(x, y, z, yaw); err != nil {
-				a.log.Warn("place battery", "err", err)
-			}
-			a.log.Info("place battery sent (LMB)")
-		case "factory":
-			x, y, z, yaw := a.placeForward(5.0)
-			if err := a.nc.PlaceFactory(x, y, z, yaw); err != nil {
-				a.log.Warn("place factory", "err", err)
-			}
-			a.log.Info("place factory sent (LMB)")
 		case "boat":
 			// Поставить лодку в 5 юнитах перед собой (только на воду).
 			fw := a.flight.Forward()
@@ -428,25 +386,6 @@ func (a *App) updatePlaying(dt float32) {
 				a.log.Info("saddle: no mammoth in reach")
 			}
 		case "":
-			if id := a.factoryInSight(); id != "" {
-				a.factoryID = id
-				a.showFactory = true
-				a.factoryOpenedAt = time.Now()
-				rl.EnableCursor()
-				rl.ShowCursor()
-				a.log.Info("factory dialog opened", "id", id)
-				return
-			}
-			if id, pos := a.pinkMobInSight(); id != "" {
-				a.contractMobID = id
-				a.contractPos = pos
-				a.showContract = true
-				a.contractOpenedAt = time.Now()
-				rl.EnableCursor()
-				rl.ShowCursor()
-				a.log.Info("contract dialog opened", "mob", id)
-				return
-			}
 			if id := a.houseInSight(); id != "" {
 				if err := a.nc.ToggleDoor(id); err != nil {
 					a.log.Warn("toggle door", "err", err)
@@ -595,17 +534,9 @@ func (a *App) draw() {
 		render.DrawMammoths(a.nc.Mammoths())
 		render.DrawWells(a.nc.Wells())
 		render.DrawHouses(a.nc.Houses())
-		render.DrawSolar(a.nc.Solar())
-		render.DrawBatteries(a.nc.Batteries())
-		render.DrawFactories(a.nc.Factories())
 		render.DrawBoats(a.nc.Boats())
 		render.DrawMobs(a.nc.Mobs())
-		projs := a.nc.Projectiles()
-		if len(projs) > 0 {
-			a.log.Debug("proj debug", "count", len(projs),
-				"first", projs[0].X, projs[0].Y, projs[0].Z)
-		}
-		render.DrawProjectiles(projs)
+		render.DrawProjectiles(a.nc.Projectiles())
 		me := a.nc.PlayerID()
 		if me != "" {
 			for _, m := range a.nc.Mammoths() {
@@ -637,12 +568,6 @@ func (a *App) draw() {
 			a.drawPause()
 		}
 		a.drawHUD()
-		if a.showContract {
-			a.drawContract()
-		}
-		if a.showFactory {
-			a.drawFactory()
-		}
 	}
 
 	rl.EndTextureMode()
@@ -668,178 +593,6 @@ func (a *App) resizeUITarget() {
 }
 
 // updateDead обрабатывает горячие клавиши на экране смерти.
-// factoryRecipeUI — рецепты завода для UI.
-type factoryRecipeUI struct {
-	id     string
-	name   string
-	need   map[string]int
-	energy int
-}
-
-var factoryRecipeList = []factoryRecipeUI{
-	{id: "steel", name: "Steel", need: map[string]int{"ore": 5}, energy: 10},
-	{id: "gear", name: "Gear", need: map[string]int{"stone": 2, "wood": 2}, energy: 20},
-	{id: "circuit", name: "Circuit", need: map[string]int{"ore": 3, "liana": 1}, energy: 50},
-	{id: "drone", name: "Drone", need: map[string]int{"gear": 1, "circuit": 1}, energy: 100},
-}
-
-func (a *App) updateFactory() {
-	if time.Since(a.factoryOpenedAt) < 250*time.Millisecond {
-		return
-	}
-	if rl.IsKeyPressed(rl.KeyEscape) {
-		a.showFactory = false
-		a.factoryID = ""
-		rl.DisableCursor()
-	}
-}
-
-func (a *App) drawFactory() {
-	ignoreClicks := time.Since(a.factoryOpenedAt) < 250*time.Millisecond
-
-	sw := int32(rl.GetScreenWidth())
-	sh := int32(rl.GetScreenHeight())
-
-	rl.DrawRectangle(0, 0, sw, sh, rl.Fade(rl.Black, 0.6))
-
-	pw := int32(560)
-	ph := int32(int32(len(factoryRecipeList))*80 + 100)
-	px := (sw - pw) / 2
-	py := (sh - ph) / 2
-
-	panel := rl.NewRectangle(float32(px), float32(py), float32(pw), float32(ph))
-	rl.DrawRectangleRec(panel, rl.NewColor(40, 45, 60, 245))
-	rl.DrawRectangleLinesEx(panel, 2, rl.NewColor(120, 180, 240, 255))
-
-	title := "FACTORY"
-	tw := fonts.Measure(title, 36)
-	fonts.Draw(title, px+(pw-tw)/2, py+18, 36, rl.NewColor(150, 200, 255, 255))
-
-	const bw = 520
-	const bh = 60
-	bx := px + (pw - bw) / 2
-
-	for i, r := range factoryRecipeList {
-		y := py + 80 + int32(i)*80
-
-		// Текст с требованиями.
-		req := r.name + "  ["
-		first := true
-		for item, q := range r.need {
-			if !first {
-				req += ", "
-			}
-			req += item + " x" + itoa(q)
-			first = false
-		}
-		req += "]  E:" + itoa(r.energy)
-
-		btn := ui.Button{
-			Rect: rl.NewRectangle(float32(bx), float32(y), bw, bh),
-			Text: req,
-		}
-		btn.Draw()
-		if !ignoreClicks && btn.Clicked() {
-			if err := a.nc.CraftFactory(a.factoryID, r.id); err != nil {
-				a.log.Warn("factory craft", "err", err)
-			}
-			a.log.Info("factory craft sent", "recipe", r.id)
-		}
-	}
-
-	esc := "Esc - close"
-	escW := fonts.Measure(esc, 16)
-	fonts.Draw(esc, px+(pw-escW)/2, py+ph-28, 16, rl.Gray)
-}
-
-// itoa — простой int→string (без зависимостей).
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
-}
-
-func (a *App) updateContract() {
-	if time.Since(a.contractOpenedAt) < 250*time.Millisecond {
-		return
-	}
-	if rl.IsKeyPressed(rl.KeyEscape) {
-		a.showContract = false
-		a.contractMobID = ""
-		rl.DisableCursor()
-		return
-	}
-}
-
-func (a *App) drawContract() {
-	ignoreClicks := time.Since(a.contractOpenedAt) < 250*time.Millisecond
-	sw := int32(rl.GetScreenWidth())
-	sh := int32(rl.GetScreenHeight())
-
-	// Затемнение
-	rl.DrawRectangle(0, 0, sw, sh, rl.Fade(rl.Black, 0.55))
-
-	// Панель
-	pw := int32(520)
-	ph := int32(300)
-	px := (sw - pw) / 2
-	py := (sh - ph) / 2
-	panel := rl.NewRectangle(float32(px), float32(py), float32(pw), float32(ph))
-	rl.DrawRectangleRec(panel, rl.NewColor(40, 40, 50, 245))
-	rl.DrawRectangleLinesEx(panel, 2, rl.NewColor(240, 130, 175, 255))
-
-	title := "HELPER"
-	tw := fonts.Measure(title, 36)
-	fonts.Draw(title, px+(pw-tw)/2, py+20, 36, rl.NewColor(240, 130, 175, 255))
-
-	// Кнопки
-	const bw = 460
-	const bh = 60
-	bx := px + (pw - bw) / 2
-
-	g1 := ui.Button{
-		Rect: rl.NewRectangle(float32(bx), float32(py+100), bw, bh),
-		Text: "Give 1 fruit -> brings 4 resources",
-	}
-	g1.Draw()
-	if !ignoreClicks && g1.Clicked() {
-		_ = a.nc.AcceptContract(a.contractMobID, "gather4")
-		a.showContract = false
-		a.contractMobID = ""
-		rl.DisableCursor()
-	}
-
-	g2 := ui.Button{
-		Rect: rl.NewRectangle(float32(bx), float32(py+170), bw, bh),
-		Text: "Give 10 spears -> guard me",
-	}
-	g2.Draw()
-	if !ignoreClicks && g2.Clicked() {
-		_ = a.nc.AcceptContract(a.contractMobID, "guard")
-		a.showContract = false
-		a.contractMobID = ""
-		rl.DisableCursor()
-	}
-
-
-}
-
 func (a *App) updateDead() {
 	if rl.IsKeyPressed(rl.KeyR) {
 		a.respawn()
@@ -1180,7 +933,14 @@ func (a *App) drawHotbar() {
 	rl.DrawRectangleRec(panel, rl.NewColor(15, 15, 25, 200))
 	rl.DrawRectangleLinesEx(panel, 2, rl.NewColor(120, 120, 140, 255))
 
+	// Соберём первую строку из инвентаря
+	items := []string{}
 	inv := a.nc.Inventory()
+	for _, t := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch", "water", "liana", "leash", "house", "saddle", "boat"} {
+		if n, ok := inv[t]; ok && n > 0 {
+			items = append(items, t)
+		}
+	}
 
 	for i := 0; i < slots; i++ {
 		cx := px + pad3 + int32(i)*cell
@@ -1193,11 +953,8 @@ func (a *App) drawHotbar() {
 			rl.DrawRectangleLinesEx(rect, 3, rl.NewColor(255, 220, 90, 255))
 		}
 
-		typ := ""
-		if i < len(a.invSlots) {
-			typ = a.invSlots[i]
-		}
-		if typ != "" {
+		if i < len(items) {
+			typ := items[i]
 			col := itemColor(typ)
 			rl.DrawRectangleRec(rl.NewRectangle(float32(cx+9), float32(cy+9), float32(cell-20), float32(cell-20)), col)
 			if n := inv[typ]; n > 0 {
@@ -1341,71 +1098,6 @@ func (a *App) wellInSight() string {
 // mammothInReach возвращает ID ближайшего мамонта в радиусе 5 юнитов
 // и в конусе взгляда.
 // houseInSight возвращает ID ближайшего дома в радиусе 6 юнитов.
-// pinkMobInSight — ближайший розовый моб в конусе взгляда.
-// factoryInSight — ближайший завод в радиусе 6 юнитов и в конусе взгляда.
-func (a *App) factoryInSight() string {
-	fs := a.nc.Factories()
-	cam := a.camera.Position
-	fw := a.flight.Forward()
-	var bestID string
-	bestD2 := float32(36.0)
-	for _, f := range fs {
-		dx := f.X - cam.X
-		dy := f.Y - cam.Y
-		dz := f.Z - cam.Z
-		d2 := dx*dx + dy*dy + dz*dz
-		if d2 > 36.0 {
-			continue
-		}
-		d := float32(math.Sqrt(float64(d2)))
-		if d > 0.01 {
-			dot := (dx*fw.X + dy*fw.Y + dz*fw.Z) / d
-			if dot < 0.4 {
-				continue
-			}
-		}
-		if d2 < bestD2 {
-			bestD2 = d2
-			bestID = f.ID
-		}
-	}
-	return bestID
-}
-
-func (a *App) pinkMobInSight() (string, rl.Vector3) {
-	mobs := a.nc.Mobs()
-	cam := a.camera.Position
-	fw := a.flight.Forward()
-	var bestID string
-	var bestPos rl.Vector3
-	bestD2 := float32(36.0)
-	for _, m := range mobs {
-		if m.Kind != "pink" {
-			continue
-		}
-		dx := m.X - cam.X
-		dy := m.Y - cam.Y
-		dz := m.Z - cam.Z
-		d2 := dx*dx + dy*dy + dz*dz
-		if d2 > 36.0 {
-			continue
-		}
-		d := float32(math.Sqrt(float64(d2)))
-		if d > 0.01 {
-			dot := (dx*fw.X + dy*fw.Y + dz*fw.Z) / d
-			if dot < 0.4 {
-				continue
-			}
-		}
-		if d2 < bestD2 {
-			bestD2 = d2
-			bestID = m.ID
-			bestPos = rl.NewVector3(m.X, m.Y, m.Z)
-		}
-	}
-	return bestID, bestPos
-}
-
 func (a *App) houseInSight() string {
 	hs := a.nc.Houses()
 	cam := a.camera.Position
@@ -1580,55 +1272,31 @@ func (a *App) drawInventory() {
 	px := (sw - gridW) / 2
 	py := (sh - gridH) / 2
 
+	// затемнение и панель
 	rl.DrawRectangle(0, 0, sw, sh, rl.Fade(rl.Black, 0.6))
 	panel := rl.NewRectangle(float32(px), float32(py), float32(gridW), float32(gridH))
 	rl.DrawRectangleRec(panel, rl.NewColor(20, 20, 30, 245))
 	rl.DrawRectangleLinesEx(panel, 2, rl.NewColor(120, 120, 140, 255))
 
-	fonts.Draw("Inventory   [I / Esc close]   LMB: drag item between slots",
-		px+pad2, py+6, 20, rl.RayWhite)
+	fonts.Draw("Inventory   [I / Esc close]", px+pad2, py+6, 20, rl.RayWhite)
 
+	// список предметов
+	type slot struct {
+		typ string
+		n   int
+	}
+	items := []slot{}
 	inv := a.nc.Inventory()
+	for _, t := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch", "water", "liana", "leash", "house", "saddle", "boat"} {
+		if n, ok := inv[t]; ok && n > 0 {
+			items = append(items, slot{t, n})
+		}
+	}
+
 	mouse := rl.GetMousePosition()
 	gridY := py + 30 + pad2
 
 	var hoveredName string
-	var hoveredSlot int = -1
-
-	// Обработка мыши: клик по слоту.
-	if rl.IsMouseButtonPressed(rl.MouseLeftButton) {
-		// Найти, по какому слоту кликнули.
-		for i := 0; i < cols*rows; i++ {
-			col := int32(i % cols)
-			row := int32(i / cols)
-			cx := px + pad2 + col*cell
-			cy := gridY + row*cell
-			rect := rl.NewRectangle(float32(cx), float32(cy), float32(cell-2), float32(cell-2))
-			if rl.CheckCollisionPointRec(mouse, rect) {
-				a.dragging = true
-				a.dragFrom = i
-				break
-			}
-		}
-	}
-	if rl.IsMouseButtonReleased(rl.MouseLeftButton) && a.dragging {
-		// Куда отпустили.
-		for i := 0; i < cols*rows; i++ {
-			col := int32(i % cols)
-			row := int32(i / cols)
-			cx := px + pad2 + col*cell
-			cy := gridY + row*cell
-			rect := rl.NewRectangle(float32(cx), float32(cy), float32(cell-2), float32(cell-2))
-			if rl.CheckCollisionPointRec(mouse, rect) {
-				if i != a.dragFrom {
-					// Поменять местами.
-					a.invSlots[a.dragFrom], a.invSlots[i] = a.invSlots[i], a.invSlots[a.dragFrom]
-				}
-				break
-			}
-		}
-		a.dragging = false
-	}
 
 	for i := 0; i < cols*rows; i++ {
 		col := int32(i % cols)
@@ -1637,6 +1305,7 @@ func (a *App) drawInventory() {
 		cy := gridY + row*cell
 		rect := rl.NewRectangle(float32(cx), float32(cy), float32(cell-2), float32(cell-2))
 
+		// фон ячейки (первая строка — акцентная)
 		bg := rl.NewColor(32, 32, 44, 255)
 		if row == 0 {
 			bg = rl.NewColor(60, 50, 30, 255)
@@ -1644,61 +1313,44 @@ func (a *App) drawInventory() {
 		rl.DrawRectangleRec(rect, bg)
 		rl.DrawRectangleLinesEx(rect, 1, rl.NewColor(70, 70, 90, 255))
 
-		// Рамка выбранного слота.
+		// рамка выбранного слота
 		if row == 0 && int(col) == a.selectedSlot {
 			rl.DrawRectangleLinesEx(rect, 3, rl.NewColor(255, 220, 90, 255))
 		}
 
-		// Подсветка слота, если тащим предмет и наводим на этот слот.
-		if a.dragging && rl.CheckCollisionPointRec(mouse, rect) {
-			rl.DrawRectangleLinesEx(rect, 2, rl.NewColor(80, 200, 120, 255))
-			hoveredSlot = i
-		}
-
-		typ := a.invSlots[i]
-		if typ == "" {
+		if i >= len(items) {
 			continue
 		}
-		n := inv[typ]
-		col2 := itemColor(typ)
+		it := items[i]
+		col2 := itemColor(it.typ)
 		icon := rl.NewRectangle(float32(cx+8), float32(cy+8), float32(cell-18), float32(cell-18))
 		rl.DrawRectangleRec(icon, col2)
-		fonts.Draw(fmt.Sprintf("%d", n), cx+3, cy+cell-18, 14, rl.White)
+		fonts.Draw(fmt.Sprintf("%d", it.n), cx+3, cy+cell-18, 14, rl.White)
 
+		// hover — проверяем пересечение
 		if rl.CheckCollisionPointRec(mouse, rect) {
-			hoveredName = fmt.Sprintf("%s  x%d", itemName(typ), n)
+			hoveredName = fmt.Sprintf("%s  x%d", itemName(it.typ), it.n)
 		}
 	}
 
-	// Призрак перетаскиваемого предмета под курсором.
-	if a.dragging && a.invSlots[a.dragFrom] != "" {
-		typ := a.invSlots[a.dragFrom]
-		col2 := itemColor(typ)
-		gx := int32(mouse.X) - cell/2 + 2
-		gy := int32(mouse.Y) - cell/2 + 2
-		ghost := rl.NewRectangle(float32(gx), float32(gy), float32(cell-4), float32(cell-4))
-		rl.DrawRectangleRec(ghost, rl.NewColor(col2.R, col2.G, col2.B, 200))
-		rl.DrawRectangleLinesEx(ghost, 2, rl.White)
-		fonts.Draw(itemName(typ), gx+4, gy+cell-20, 14, rl.White)
-	}
-
-	// Tooltip.
-	if hoveredName != "" && !a.dragging {
+	// tooltip — поверх всего, привязан к курсору
+	if hoveredName != "" {
 		tw := fonts.Measure(hoveredName, 16)
 		tx := int32(mouse.X) + 18
 		ty := int32(mouse.Y) + 14
+
 		if tx+tw+20 > sw {
 			tx = int32(mouse.X) - tw - 22
 		}
 		if ty+30 > sh {
 			ty = sh - 34
 		}
+
 		box := rl.NewRectangle(float32(tx-6), float32(ty-4), float32(tw+12), 24)
 		rl.DrawRectangleRec(box, rl.NewColor(10, 10, 20, 245))
 		rl.DrawRectangleLinesEx(box, 1, rl.NewColor(200, 200, 220, 255))
 		fonts.Draw(hoveredName, tx, ty, 16, rl.White)
 	}
-	_ = hoveredSlot
 }
 
 // itemColor возвращает цвет иконки для типа ресурса.
@@ -1718,20 +1370,6 @@ func itemColor(typ string) rl.Color {
 		return rl.NewColor(90, 60, 40, 255)
 	case "boat":
 		return rl.NewColor(120, 80, 40, 255)
-	case "solar":
-		return rl.NewColor(40, 80, 140, 255)
-	case "battery":
-		return rl.NewColor(60, 60, 80, 255)
-	case "factory":
-		return rl.NewColor(110, 100, 90, 255)
-	case "steel":
-		return rl.NewColor(180, 180, 190, 255)
-	case "gear":
-		return rl.NewColor(160, 160, 130, 255)
-	case "circuit":
-		return rl.NewColor(80, 200, 120, 255)
-	case "drone":
-		return rl.NewColor(100, 150, 220, 255)
 	case "wood":
 		return rl.NewColor(120, 80, 40, 255)
 	case "ore":
@@ -1777,20 +1415,6 @@ func itemName(typ string) string {
 		return "Saddle"
 	case "boat":
 		return "Boat"
-	case "solar":
-		return "Solar Panel"
-	case "battery":
-		return "Battery"
-	case "factory":
-		return "Factory"
-	case "steel":
-		return "Steel"
-	case "gear":
-		return "Gear"
-	case "circuit":
-		return "Circuit"
-	case "drone":
-		return "Drone"
 	}
 	return typ
 }
@@ -1811,9 +1435,6 @@ var craftRecipes = []craftRecipe{
 	{id: "house", name: "House", out: "house", req: map[string]int{"wood": 50}},
 	{id: "saddle", name: "Saddle", out: "saddle", req: map[string]int{"liana": 4}},
 	{id: "boat", name: "Boat", out: "boat", req: map[string]int{"wood": 20}},
-	{id: "solar", name: "Solar Panel", out: "solar", req: map[string]int{"ore": 10, "stone": 5}},
-	{id: "battery", name: "Battery", out: "battery", req: map[string]int{"ore": 15, "stone": 10}},
-	{id: "factory", name: "Factory", out: "factory", req: map[string]int{"ore": 30, "wood": 20, "stone": 20}},
 }
 
 // drawCraft — окно крафта со списком рецептов.
@@ -1858,7 +1479,7 @@ func (a *App) drawCraft() {
 		// требования
 		reqText := ""
 		canCraft := true
-		for _, k := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch", "water", "liana", "leash", "house", "saddle", "boat", "solar", "battery", "factory", "steel", "gear", "circuit", "drone"} {
+		for _, k := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch", "water", "liana", "leash", "house", "saddle", "boat"} {
 			if need, ok := rec.req[k]; ok {
 				have := inv[k]
 				reqText += fmt.Sprintf("%s %d/%d   ", k, have, need)
@@ -1891,10 +1512,18 @@ func (a *App) drawHeldItem() {
 	if a.flight == nil || a.flight.Mode != input.ModeSurvival {
 		return
 	}
-	typ := a.heldItem()
-	if typ == "" {
+	// Найдём предмет в selectedSlot
+	items := []string{}
+	inv := a.nc.Inventory()
+	for _, t := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch", "water", "liana", "leash", "house", "saddle", "boat"} {
+		if n, ok := inv[t]; ok && n > 0 {
+			items = append(items, t)
+		}
+	}
+	if a.selectedSlot >= len(items) {
 		return
 	}
+	typ := items[a.selectedSlot]
 	col := itemColor(typ)
 
 	// Локальные оси камеры
@@ -1919,45 +1548,17 @@ func (a *App) myHP() int {
 }
 
 func (a *App) heldItem() string {
-	if a.selectedSlot < 0 || a.selectedSlot >= len(a.invSlots) {
+	inv := a.nc.Inventory()
+	items := []string{}
+	for _, t := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch", "water", "liana", "leash", "house", "saddle", "boat"} {
+		if n, ok := inv[t]; ok && n > 0 {
+			items = append(items, t)
+		}
+	}
+	if a.selectedSlot < 0 || a.selectedSlot >= len(items) {
 		return ""
 	}
-	return a.invSlots[a.selectedSlot]
-}
-
-// syncInvSlots — разложить новые предметы из серверного инвентаря по слотам.
-// Уже занятые слоты не трогает, освобождает слоты при исчезновении предмета.
-func (a *App) syncInvSlots() {
-	inv := a.nc.Inventory()
-
-	// Какие типы уже лежат в слотах.
-	present := make(map[string]bool, len(a.invSlots))
-	for _, t := range a.invSlots {
-		if t != "" {
-			present[t] = true
-		}
-	}
-
-	// Новые предметы → в первый пустой слот.
-	for t, n := range inv {
-		if n <= 0 || present[t] {
-			continue
-		}
-		for i := 0; i < len(a.invSlots); i++ {
-			if a.invSlots[i] == "" {
-				a.invSlots[i] = t
-				present[t] = true
-				break
-			}
-		}
-	}
-
-	// Очистить слоты, где предмет пропал.
-	for i, t := range a.invSlots {
-		if t != "" && inv[t] <= 0 {
-			a.invSlots[i] = ""
-		}
-	}
+	return items[a.selectedSlot]
 }
 
 // updateProjectiles — локальная симуляция снарядов с детекцией коллизии.
@@ -1969,11 +1570,8 @@ func (a *App) updateProjectiles() {
 	dt := rl.GetFrameTime()
 	const speed = 60.0
 	const ttl = 1.5
-	const mobR = 2.5    // радиус моба (куб 2x2x2 + запас)
-	const mammothR = 3.0 // радиус мамонта
-	const spearR = 0.5
+	const hitR = 15.0
 
-	mobs := a.nc.Mobs()
 	mammoths := a.nc.Mammoths()
 
 	alive := a.projectiles[:0]
@@ -1981,29 +1579,14 @@ func (a *App) updateProjectiles() {
 		if now.Sub(p.spawn).Seconds() > ttl {
 			continue
 		}
-		prev := p.pos
 		p.pos = rl.Vector3Add(p.pos, rl.Vector3Scale(p.dir, speed*dt))
 
-		// 1. Сначала мобы — приоритетнее.
-		var hitMobID string
-		for _, m := range mobs {
-			c := rl.NewVector3(m.X, m.Y, m.Z)
-			if segSphereHit(prev, p.pos, c, mobR+spearR) {
-				hitMobID = m.ID
-				break
-			}
-		}
-		if hitMobID != "" {
-			_ = a.nc.HitMob(hitMobID)
-			a.log.Info("hit mob (LMB throw)", "mob", hitMobID)
-			continue
-		}
-
-		// 2. Потом мамонты.
 		var hitID string
 		for _, m := range mammoths {
-			c := rl.NewVector3(m.X, m.Y, m.Z)
-			if segSphereHit(prev, p.pos, c, mammothR+spearR) {
+			dx := p.pos.X - m.X
+			dy := p.pos.Y - m.Y
+			dz := p.pos.Z - m.Z
+			if dx*dx+dy*dy+dz*dz < hitR*hitR {
 				hitID = m.ID
 				break
 			}
@@ -2016,26 +1599,6 @@ func (a *App) updateProjectiles() {
 		alive = append(alive, p)
 	}
 	a.projectiles = alive
-}
-
-// segSphereHit — пересечение отрезка [a,b] со сферой (c, r).
-func segSphereHit(a, b, c rl.Vector3, r float32) bool {
-	ab := rl.Vector3Subtract(b, a)
-	ac := rl.Vector3Subtract(c, a)
-	abLen2 := rl.Vector3DotProduct(ab, ab)
-	if abLen2 < 1e-6 {
-		d := rl.Vector3Subtract(a, c)
-		return rl.Vector3DotProduct(d, d) < r*r
-	}
-	t := rl.Vector3DotProduct(ac, ab) / abLen2
-	if t < 0 {
-		t = 0
-	} else if t > 1 {
-		t = 1
-	}
-	closest := rl.Vector3Add(a, rl.Vector3Scale(ab, t))
-	d := rl.Vector3Subtract(closest, c)
-	return rl.Vector3DotProduct(d, d) < r*r
 }
 
 // drawProjectiles — рисует локальные снаряды жёлтыми сферами.

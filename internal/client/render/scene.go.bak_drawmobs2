@@ -291,13 +291,12 @@ func DrawBoats(boats []protocol.Boat) {
 func DrawMobs(mobs []protocol.Mob) {
 	spot := rl.NewColor(15, 15, 15, 255)
 	redEye := rl.NewColor(220, 40, 40, 255)
-	wire := rl.NewColor(20, 20, 20, 255)
 
 	for _, m := range mobs {
 		pos := rl.NewVector3(m.X, m.Y, m.Z)
 		size := float32(2.0)
 
-		// Цвет базы.
+		// Враждебные — красные. Другие — серо-чёрные.
 		base := rl.NewColor(180, 30, 30, 255) // красный (hostile)
 		if m.Kind == "collector" {
 			base = rl.NewColor(150, 150, 150, 255) // серый
@@ -307,48 +306,47 @@ func DrawMobs(mobs []protocol.Mob) {
 			base = rl.NewColor(50, 50, 60, 255)
 		}
 
-		// Основа.
+		// Основа
 		rl.DrawCube(pos, size, size, size, base)
 
-		// Пятна — только для hostile/collector.
-		if m.Kind != "pink" {
-			h := size/2 + 0.02
-			s := size * 0.18
-			offsets := [][2]float32{
-				{-0.6, -0.6}, {-0.6, 0.6},
-				{0.6, -0.6}, {0.6, 0.6},
-				{0.0, 0.0},
-			}
-			for _, face := range []int{0, 1, 2, 3, 4, 5} {
-				for _, o := range offsets {
-					var off rl.Vector3
-					a := o[0] * size / 2
-					b := o[1] * size / 2
-					switch face {
-					case 0:
-						off = rl.NewVector3(a, b, h)
-					case 1:
-						off = rl.NewVector3(a, b, -h)
-					case 2:
-						off = rl.NewVector3(h, a, b)
-					case 3:
-						off = rl.NewVector3(-h, a, b)
-					case 4:
-						off = rl.NewVector3(a, h, b)
-					case 5:
-						off = rl.NewVector3(a, -h, b)
-					}
-					rl.DrawCube(rl.Vector3Add(pos, off), s, s, s, spot)
+		// Пятна на гранях: только для hostile/collector (у розового их нет).
+		if m.Kind == "pink" {
+			continue
+		}
+		h := size/2 + 0.02
+		s := size * 0.18
+		offsets := [][2]float32{
+			{-0.6, -0.6}, {-0.6, 0.6},
+			{0.6, -0.6}, {0.6, 0.6},
+			{0.0, 0.0},
+		}
+
+		// 6 граней
+		for _, face := range []int{0, 1, 2, 3, 4, 5} {
+			for _, o := range offsets {
+				var off rl.Vector3
+				a := o[0] * size / 2
+				b := o[1] * size / 2
+				switch face {
+				case 0:
+					off = rl.NewVector3(a, b, h)
+				case 1:
+					off = rl.NewVector3(a, b, -h)
+				case 2:
+					off = rl.NewVector3(h, a, b)
+				case 3:
+					off = rl.NewVector3(-h, a, b)
+				case 4:
+					off = rl.NewVector3(a, h, b)
+				case 5:
+					off = rl.NewVector3(a, -h, b)
 				}
+				rl.DrawCube(rl.Vector3Add(pos, off), s, s, s, spot)
 			}
 		}
 
-		// Обводка куба — всем.
-		rl.DrawCubeWires(pos, size, size, size, wire)
-
-		// Красные глаза — только hostile.
+		// Красные глаза спереди-сверху (для враждебных).
 		if m.Kind == "hostile" {
-			h := size/2 + 0.02
 			eyeL := rl.NewVector3(pos.X-size*0.25, pos.Y+size*0.3, pos.Z+h)
 			eyeR := rl.NewVector3(pos.X+size*0.25, pos.Y+size*0.3, pos.Z+h)
 			rl.DrawCube(eyeL, 0.25, 0.25, 0.1, redEye)
@@ -362,73 +360,6 @@ func DrawProjectiles(projs []protocol.MobProjectile) {
 		pos := rl.NewVector3(p.X, p.Y, p.Z)
 		rl.DrawSphere(pos, 0.3, rl.NewColor(255, 200, 60, 255))
 		rl.DrawSphereWires(pos, 0.3, 8, 8, rl.NewColor(180, 120, 20, 255))
-	}
-}
-
-func DrawSolar(panels []protocol.Solar) {
-	for _, s := range panels {
-		rl.PushMatrix()
-		rl.Translatef(s.X, s.Y, s.Z)
-		rl.Rotatef(s.Yaw*180.0/3.14159265, 0, 1, 0)
-		// Основание
-		rl.DrawCube(rl.NewVector3(0, -0.6, 0), 3, 0.3, 3, rl.NewColor(60, 60, 70, 255))
-		// Панель (наклонная — просто плоский куб сверху)
-		rl.DrawCube(rl.NewVector3(0, 0, 0), 3, 0.15, 3, rl.NewColor(30, 60, 130, 255))
-		rl.DrawCubeWires(rl.NewVector3(0, 0, 0), 3, 0.15, 3, rl.NewColor(20, 40, 90, 255))
-		// Солнечные «клетки» (пятна)
-		rl.DrawCube(rl.NewVector3(-0.7, 0.1, -0.7), 0.8, 0.05, 0.8, rl.NewColor(60, 130, 220, 255))
-		rl.DrawCube(rl.NewVector3(0.7, 0.1, -0.7), 0.8, 0.05, 0.8, rl.NewColor(60, 130, 220, 255))
-		rl.DrawCube(rl.NewVector3(-0.7, 0.1, 0.7), 0.8, 0.05, 0.8, rl.NewColor(60, 130, 220, 255))
-		rl.DrawCube(rl.NewVector3(0.7, 0.1, 0.7), 0.8, 0.05, 0.8, rl.NewColor(60, 130, 220, 255))
-		rl.PopMatrix()
-	}
-}
-
-func DrawBatteries(batteries []protocol.Battery) {
-	for _, b := range batteries {
-		rl.PushMatrix()
-		rl.Translatef(b.X, b.Y, b.Z)
-		rl.Rotatef(b.Yaw*180.0/3.14159265, 0, 1, 0)
-		// Корпус
-		rl.DrawCube(rl.NewVector3(0, 0, 0), 2, 3, 2, rl.NewColor(60, 60, 80, 255))
-		rl.DrawCubeWires(rl.NewVector3(0, 0, 0), 2, 3, 2, rl.NewColor(20, 20, 30, 255))
-		// Индикатор заряда — цвет зависит от энергии
-		level := float32(0)
-		if b.MaxEnergy > 0 {
-			level = float32(b.Energy) / float32(b.MaxEnergy)
-		}
-		var ind rl.Color
-		switch {
-		case level > 0.66:
-			ind = rl.NewColor(60, 220, 100, 255)
-		case level > 0.33:
-			ind = rl.NewColor(230, 200, 60, 255)
-		default:
-			ind = rl.NewColor(220, 60, 60, 255)
-		}
-		rl.DrawCube(rl.NewVector3(0, 1.1, 0), 1.2, 0.4, 1.2, ind)
-		rl.PopMatrix()
-	}
-}
-
-func DrawFactories(factories []protocol.Factory) {
-	for _, f := range factories {
-		rl.PushMatrix()
-		rl.Translatef(f.X, f.Y, f.Z)
-		rl.Rotatef(f.Yaw*180.0/3.14159265, 0, 1, 0)
-		// Корпус
-		rl.DrawCube(rl.NewVector3(0, 0, 0), 4, 3, 4, rl.NewColor(110, 100, 90, 255))
-		rl.DrawCubeWires(rl.NewVector3(0, 0, 0), 4, 3, 4, rl.NewColor(60, 50, 40, 255))
-		// Трубы
-		rl.DrawCube(rl.NewVector3(-1, 2.2, -1), 0.6, 1.5, 0.6, rl.NewColor(80, 70, 60, 255))
-		rl.DrawCube(rl.NewVector3(1, 2.2, -1), 0.6, 1.5, 0.6, rl.NewColor(80, 70, 60, 255))
-		// Окно-индикатор
-		if f.Crafting != "" {
-			rl.DrawCube(rl.NewVector3(0, 0.5, 2.05), 1.5, 0.8, 0.1, rl.NewColor(255, 200, 60, 255))
-		} else {
-			rl.DrawCube(rl.NewVector3(0, 0.5, 2.05), 1.5, 0.8, 0.1, rl.NewColor(40, 80, 40, 255))
-		}
-		rl.PopMatrix()
 	}
 }
 

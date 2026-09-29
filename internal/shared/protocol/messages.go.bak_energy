@@ -32,9 +32,6 @@ const (
 	TypeSelectItem      Type = "select_item"
 	TypeLeashMammoth    Type = "leash_mammoth"
 	TypePlaceHouse      Type = "place_house"
-	TypePlaceSolar      Type = "place_solar"
-	TypePlaceBattery    Type = "place_battery"
-	TypePlaceFactory    Type = "place_factory"
 	TypeToggleDoor      Type = "toggle_door"
 	TypeSaddleMammoth   Type = "saddle_mammoth"
 	TypeRideMammoth     Type = "ride_mammoth"
@@ -42,8 +39,6 @@ const (
 	TypeEnterBoat       Type = "enter_boat"
 	TypeHitMob          Type = "hit_mob"
 	TypeAcceptContract  Type = "accept_contract"
-	TypeOpenFactory     Type = "open_factory"
-	TypeCraftFactory    Type = "craft_factory"
 )
 
 type Envelope struct {
@@ -125,37 +120,6 @@ type Snapshot struct {
 	Boats       []Boat          `json:"boats"`
 	Mobs        []Mob           `json:"mobs"`
 	Projectiles []MobProjectile `json:"projectiles"`
-	Solar       []Solar         `json:"solar"`
-	Batteries   []Battery       `json:"batteries"`
-	Factories   []Factory       `json:"factories"`
-}
-
-type Solar struct {
-	ID  string  `json:"id"`
-	X   float32 `json:"x"`
-	Y   float32 `json:"y"`
-	Z   float32 `json:"z"`
-	Yaw float32 `json:"yaw"`
-}
-
-type Battery struct {
-	ID       string  `json:"id"`
-	X        float32 `json:"x"`
-	Y        float32 `json:"y"`
-	Z        float32 `json:"z"`
-	Yaw      float32 `json:"yaw"`
-	Energy   int     `json:"energy"`
-	MaxEnergy int    `json:"max_energy"`
-}
-
-type Factory struct {
-	ID       string  `json:"id"`
-	X        float32 `json:"x"`
-	Y        float32 `json:"y"`
-	Z        float32 `json:"z"`
-	Yaw      float32 `json:"yaw"`
-	Crafting string  `json:"crafting,omitempty"` // какой рецепт в работе
-	Progress int     `json:"progress,omitempty"` // 0..100
 }
 
 type MobProjectile struct {
@@ -175,15 +139,6 @@ type HitMob struct {
 type AcceptContract struct {
 	MobID      string `json:"mob_id"`
 	ContractID string `json:"contract_id"` // "gather4" | "guard"
-}
-
-type OpenFactory struct {
-	FactoryID string `json:"factory_id"`
-}
-
-type CraftFactory struct {
-	FactoryID string `json:"factory_id"`
-	Recipe    string `json:"recipe"`
 }
 
 type Mob struct {
@@ -227,27 +182,6 @@ type House struct {
 }
 
 type PlaceHouse struct {
-	X   float32 `json:"x"`
-	Y   float32 `json:"y"`
-	Z   float32 `json:"z"`
-	Yaw float32 `json:"yaw"`
-}
-
-type PlaceSolar struct {
-	X   float32 `json:"x"`
-	Y   float32 `json:"y"`
-	Z   float32 `json:"z"`
-	Yaw float32 `json:"yaw"`
-}
-
-type PlaceBattery struct {
-	X   float32 `json:"x"`
-	Y   float32 `json:"y"`
-	Z   float32 `json:"z"`
-	Yaw float32 `json:"yaw"`
-}
-
-type PlaceFactory struct {
 	X   float32 `json:"x"`
 	Y   float32 `json:"y"`
 	Z   float32 `json:"z"`

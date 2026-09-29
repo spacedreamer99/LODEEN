@@ -6,4 +6,5 @@ const (
 	ModeMenu Mode = iota
 	ModePlaying
 	ModePaused
+	ModeDead
 )

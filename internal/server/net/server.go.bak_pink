@@ -194,40 +194,15 @@ type House struct {
 	DoorOpen bool
 }
 
-type Solar struct {
-	ID  string
-	Pos protocol.Vector3
-	Yaw float32
-}
-
-type Battery struct {
-	ID        string
-	Pos       protocol.Vector3
-	Yaw       float32
-	Energy    int
-	MaxEnergy int
-}
-
-type Factory struct {
-	ID       string
-	Pos      protocol.Vector3
-	Yaw      float32
-	Crafting string
-	Progress int
-}
-
 type Mob struct {
 	ID           string
 	Pos          protocol.Vector3
 	HP           int
 	MaxHP        int
-	Kind         string // "hostile" | "collector" | "pink"
+	Kind         string // "hostile" | "collector"
 	LastAttackAt time.Time
 	Angered      bool
 	Inventory    map[string]int
-	Contract     string // "" | "gather4" | "guard"
-	OwnerID      string
-	DeliveredAt  time.Time
 }
 
 type Projectile struct {
@@ -263,15 +238,6 @@ type Server struct {
 	housesMu sync.RWMutex
 	houses   map[string]*House
 
-	solarMu sync.RWMutex
-	solar   map[string]*Solar
-
-	batteriesMu sync.RWMutex
-	batteries   map[string]*Battery
-
-	factoriesMu sync.RWMutex
-	factories   map[string]*Factory
-
 	boatsMu sync.RWMutex
 	boats   map[string]*Boat
 
@@ -306,9 +272,6 @@ func New(addr string, tickRate int, log *slog.Logger, m *Metrics) *Server {
 	s.spawnWells(6)
 
 	s.houses = make(map[string]*House)
-	s.solar = make(map[string]*Solar)
-	s.batteries = make(map[string]*Battery)
-	s.factories = make(map[string]*Factory)
 	s.boats = make(map[string]*Boat)
 	s.mobs = make(map[string]*Mob)
 	s.spawnMobs(5)
@@ -811,12 +774,8 @@ func (s *Server) spawnMobs(n int) {
 		id := newID()
 		kind := "hostile"
 		hp := 1
-		switch i % 3 {
-		case 1:
+		if i%2 == 1 {
 			kind = "collector"
-			hp = 10
-		case 2:
-			kind = "pink"
 			hp = 10
 		}
 		s.mobs[id] = &Mob{
@@ -841,308 +800,6 @@ const mobAttackCooldown = 1500 * time.Millisecond
 const collectorSearchD2 = 40.0 * 40.0
 const collectorPickD2 = 2.5 * 2.5
 const collectorSpeed = 4.0
-// tickPink — розовый мирный моб. Убегает от серых и красных, но не от игрока.
-// Вызывается при удержании mobsMu.Lock() в tickMobs.
-const pinkFleeD2 = 15.0 * 15.0
-const pinkPanicD2 = 8.0 * 8.0
-const pinkSpeed = 6.0
-const pinkSearchD2 = 40.0 * 40.0
-const pinkPickD2 = 2.5 * 2.5
-const pinkDeliverD2 = 4.0 * 4.0
-const pinkGuardRangeD2 = 12.0 * 12.0
-const pinkGuardCloseD2 = 5.0 * 5.0
-const pinkThrowDamage = 2
-const pinkThrowCooldown = 1500 * time.Millisecond
-const pinkShootRangeD2 = 15.0 * 15.0
-
-// tickPink — розовый мирный моб. Убегает от серых и красных, но не от игрока.
-// Выполняет контракты: gather4 (собрать 4 ресурса и принести) или guard (охранять игрока).
-func (s *Server) tickPink(m *Mob, dt float32) {
-	// Все розовые автостреляют в угрозы (hostile или Angered collector).
-	s.pinkAutoShoot(m)
-
-	// Контракт gather4.
-	if m.Contract == "gather4" {
-		s.tickPinkGather(m, dt)
-		return
-	}
-	// Контракт guard.
-	if m.Contract == "guard" {
-		s.tickPinkGuard(m, dt)
-		return
-	}
-	// Без контракта — убегает от угроз.
-	s.tickPinkFlee(m, dt)
-}
-
-// pinkAutoShoot — розовый стреляет в ближайшую угрозу.
-// Угроза: hostile (всегда) или collector с Angered=true.
-func (s *Server) pinkAutoShoot(m *Mob) {
-	var threat *Mob
-	bestD2 := float32(pinkShootRangeD2)
-	for _, other := range s.mobs {
-		if other.ID == m.ID {
-			continue
-		}
-		isThreat := other.Kind == "hostile" ||
-			(other.Kind == "collector" && other.Angered)
-		if !isThreat {
-			continue
-		}
-		dx := other.Pos.X - m.Pos.X
-		dy := other.Pos.Y - m.Pos.Y
-		dz := other.Pos.Z - m.Pos.Z
-		d2 := dx*dx + dy*dy + dz*dz
-		if d2 < bestD2 {
-			threat = other
-			bestD2 = d2
-		}
-	}
-	if threat == nil {
-		return
-	}
-	now := time.Now()
-	if now.Sub(m.LastAttackAt) < pinkThrowCooldown {
-		return
-	}
-	d := float32(math.Sqrt(float64(bestD2)))
-	if d < 0.01 {
-		return
-	}
-	m.LastAttackAt = now
-	pid := newID()
-	s.projMu.Lock()
-	s.projectiles[pid] = &Projectile{
-		ID:  pid,
-		Pos: m.Pos,
-		Dir: protocol.Vector3{
-			X: (threat.Pos.X - m.Pos.X) / d,
-			Y: (threat.Pos.Y - m.Pos.Y) / d,
-			Z: (threat.Pos.Z - m.Pos.Z) / d,
-		},
-		Speed:      12.0,
-		OwnerMobID: m.ID,
-		TargetID:   threat.ID,
-		SpawnAt:    now,
-	}
-	s.projMu.Unlock()
-	s.log.Info("pink shoots hostile", "mob", m.ID, "target", threat.ID, "dist", d)
-}
-
-// tickPinkFlee — убегает от серых и красных.
-func (s *Server) tickPinkFlee(m *Mob, dt float32) {
-	var threat *Mob
-	bestD2 := float32(pinkFleeD2)
-	for _, other := range s.mobs {
-		if other.ID == m.ID {
-			continue
-		}
-		if other.Kind != "hostile" && other.Kind != "collector" {
-			continue
-		}
-		dx := other.Pos.X - m.Pos.X
-		dy := other.Pos.Y - m.Pos.Y
-		dz := other.Pos.Z - m.Pos.Z
-		d2 := dx*dx + dy*dy + dz*dz
-		if d2 < bestD2 {
-			threat = other
-			bestD2 = d2
-		}
-	}
-	if threat == nil {
-		return
-	}
-	dx := m.Pos.X - threat.Pos.X
-	dy := m.Pos.Y - threat.Pos.Y
-	dz := m.Pos.Z - threat.Pos.Z
-	d := float32(math.Sqrt(float64(dx*dx + dy*dy + dz*dz)))
-	if d < 0.01 {
-		return
-	}
-	speed := float32(pinkSpeed)
-	if bestD2 < float32(pinkPanicD2) {
-		speed *= 1.5
-	}
-	m.Pos.X += (dx / d) * speed * dt
-	m.Pos.Y += (dy / d) * speed * dt
-	m.Pos.Z += (dz / d) * speed * dt
-	m.Pos = protocol.ClampToSurface(m.Pos)
-}
-
-// tickPinkGather — собирает 4 ресурса и несёт владельцу.
-func (s *Server) tickPinkGather(m *Mob, dt float32) {
-	// Сколько уже собрал.
-	total := 0
-	for _, q := range m.Inventory {
-		total += q
-	}
-
-
-	// Если собрал 4+ — идём к владельцу и отдаём.
-	if total >= 4 {
-		if s.pinkDeliver(m) {
-			return
-		}
-		// Идти к владельцу.
-		owner := s.findPlayerState(m.OwnerID)
-		if owner == nil {
-			return
-		}
-		dx := owner.X - m.Pos.X
-		dy := owner.Y - m.Pos.Y
-		dz := owner.Z - m.Pos.Z
-		d := float32(math.Sqrt(float64(dx*dx + dy*dy + dz*dz)))
-		if d < 0.01 {
-			return
-		}
-		m.Pos.X += (dx / d) * pinkSpeed * dt
-		m.Pos.Y += (dy / d) * pinkSpeed * dt
-		m.Pos.Z += (dz / d) * pinkSpeed * dt
-		m.Pos = protocol.ClampToSurface(m.Pos)
-		return
-	}
-
-	// Ищем ближайший ресурс.
-	var target *protocol.Resource
-	bestD2 := float32(pinkSearchD2)
-	s.resourcesMu.RLock()
-	for _, res := range s.resources {
-		dx := res.X - m.Pos.X
-		dy := res.Y - m.Pos.Y
-		dz := res.Z - m.Pos.Z
-		d2 := dx*dx + dy*dy + dz*dz
-		if d2 < bestD2 {
-			r := res
-			target = &r
-			bestD2 = d2
-		}
-	}
-	s.resourcesMu.RUnlock()
-
-	if target == nil {
-		return
-	}
-
-	// Подобрать если рядом.
-	if bestD2 < float32(pinkPickD2) {
-		s.resourcesMu.Lock()
-		if _, ok := s.resources[target.ID]; ok {
-			delete(s.resources, target.ID)
-			m.Inventory[target.Type]++
-		}
-		s.resourcesMu.Unlock()
-		return
-	}
-
-	// Идти к ресурсу.
-	dx := target.X - m.Pos.X
-	dy := target.Y - m.Pos.Y
-	dz := target.Z - m.Pos.Z
-	d := float32(math.Sqrt(float64(dx*dx + dy*dy + dz*dz)))
-	if d < 0.01 {
-		return
-	}
-	m.Pos.X += (dx / d) * pinkSpeed * dt
-	m.Pos.Y += (dy / d) * pinkSpeed * dt
-	m.Pos.Z += (dz / d) * pinkSpeed * dt
-	m.Pos = protocol.ClampToSurface(m.Pos)
-}
-
-// pinkDeliver — если рядом с владельцем, передаёт ему все ресурсы. Возвращает true если отдал.
-func (s *Server) pinkDeliver(m *Mob) bool {
-	owner := s.findClient(m.OwnerID)
-	if owner == nil {
-		return false
-	}
-	ps := owner.State()
-	dx := ps.X - m.Pos.X
-	dy := ps.Y - m.Pos.Y
-	dz := ps.Z - m.Pos.Z
-	if dx*dx+dy*dy+dz*dz > float32(pinkDeliverD2) {
-		return false
-	}
-	// Передаём всё в инвентарь игрока.
-	owner.mu.Lock()
-	for item, q := range m.Inventory {
-		owner.inventory[item] += q
-	}
-	inv := make(map[string]int, len(owner.inventory))
-	for k, v := range owner.inventory {
-		inv[k] = v
-	}
-	owner.mu.Unlock()
-	owner.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
-	s.log.Info("pink delivered", "mob", m.ID, "items", len(m.Inventory))
-	m.Inventory = make(map[string]int)
-	m.Contract = ""
-	m.OwnerID = ""
-	return true
-}
-
-// tickPinkGuard — охраняет владельца, атакует ближайшего красного.
-func (s *Server) tickPinkGuard(m *Mob, dt float32) {
-	owner := s.findPlayerState(m.OwnerID)
-	if owner == nil {
-		m.Contract = ""
-		m.OwnerID = ""
-		return
-	}
-
-	// Ищем ближайшего красного в радиусе.
-	var target *Mob
-	bestD2 := float32(pinkGuardRangeD2)
-	for _, other := range s.mobs {
-		if other.Kind != "hostile" {
-			continue
-		}
-		dx := other.Pos.X - m.Pos.X
-		dy := other.Pos.Y - m.Pos.Y
-		dz := other.Pos.Z - m.Pos.Z
-		d2 := dx*dx + dy*dy + dz*dz
-		if d2 < bestD2 {
-			target = other
-			bestD2 = d2
-		}
-	}
-
-	if target != nil {
-		return
-	}
-
-	// Красных рядом нет — следуем за владельцем на дистанции 5.
-	dx := owner.X - m.Pos.X
-	dy := owner.Y - m.Pos.Y
-	dz := owner.Z - m.Pos.Z
-	d2 := dx*dx + dy*dy + dz*dz
-	if d2 < float32(pinkGuardCloseD2) {
-		return
-	}
-	d := float32(math.Sqrt(float64(d2)))
-	if d < 0.01 {
-		return
-	}
-	m.Pos.X += (dx / d) * pinkSpeed * dt
-	m.Pos.Y += (dy / d) * pinkSpeed * dt
-	m.Pos.Z += (dz / d) * pinkSpeed * dt
-	m.Pos = protocol.ClampToSurface(m.Pos)
-}
-
-// findClient находит клиента по ID.
-func (s *Server) findClient(id string) *Client {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.clients[id]
-}
-
-// findPlayerState находит PlayerState по ID.
-func (s *Server) findPlayerState(id string) *protocol.PlayerState {
-	c := s.findClient(id)
-	if c == nil {
-		return nil
-	}
-	st := c.State()
-	return &st
-}
 
 // tickCollector — серый моб идёт к ближайшему ресурсу и подбирает его.
 // Вызывается, когда держится mobsMu.Lock() в tickMobs.
@@ -1212,11 +869,6 @@ func (s *Server) tickMobs(dt float32) {
 
 	now := time.Now()
 	for _, m := range s.mobs {
-		// Розовый — убегает от серых и красных.
-		if m.Kind == "pink" {
-			s.tickPink(m, dt)
-			continue
-		}
 		// Коллектор и не разозлён — собирает ресурсы и не атакует.
 		if m.Kind == "collector" && !m.Angered {
 			s.tickCollector(m, dt)
@@ -1277,7 +929,7 @@ func (s *Server) tickMobs(dt float32) {
 					ID:         pid,
 					Pos:        m.Pos,
 					Dir:        protocol.Vector3{X: dx / d, Y: dy / d, Z: dz / d},
-					Speed:      12.0,
+					Speed:      25.0,
 					OwnerMobID: m.ID,
 					TargetID:   nearest.client.ID,
 					SpawnAt:    now,
@@ -1294,20 +946,9 @@ func (s *Server) tickProjectiles(dt float32) {
 	const projTTL = 3 * time.Second
 	const projHitD2 = 1.5 * 1.5
 
-	// Снимок мобов ДО projMu — иначе deadlock с tickMobs.
-	s.mobsMu.RLock()
-	mobPos := make(map[string]protocol.Vector3, len(s.mobs))
-	for id, mo := range s.mobs {
-		mobPos[id] = mo.Pos
-	}
-	s.mobsMu.RUnlock()
-
-	type mobHit struct {
-		id string
-	}
-	var mobHits []mobHit
-
 	s.projMu.Lock()
+	defer s.projMu.Unlock()
+
 	for id, p := range s.projectiles {
 		if now.Sub(p.SpawnAt) > projTTL {
 			delete(s.projectiles, id)
@@ -1317,7 +958,7 @@ func (s *Server) tickProjectiles(dt float32) {
 		p.Pos.Y += p.Dir.Y * p.Speed * dt
 		p.Pos.Z += p.Dir.Z * p.Speed * dt
 
-		// 1. Проверка попадания в целевого игрока.
+		// Проверка попадания в целевого игрока.
 		s.mu.RLock()
 		var target *Client
 		for _, c := range s.clients {
@@ -1327,103 +968,18 @@ func (s *Server) tickProjectiles(dt float32) {
 			}
 		}
 		s.mu.RUnlock()
-		if target != nil {
-			ps := target.State()
-			dx := ps.X - p.Pos.X
-			dy := ps.Y - p.Pos.Y
-			dz := ps.Z - p.Pos.Z
-			if dx*dx+dy*dy+dz*dz < projHitD2 {
-				target.damage(mobAttackDamage)
-				s.log.Info("mob spear hit", "target", p.TargetID, "dmg", mobAttackDamage)
-				delete(s.projectiles, id)
-			}
+		if target == nil {
+			delete(s.projectiles, id)
 			continue
 		}
-
-		// 2. Проверка попадания в моба-цель.
-		if mp, ok := mobPos[p.TargetID]; ok {
-			dx := mp.X - p.Pos.X
-			dy := mp.Y - p.Pos.Y
-			dz := mp.Z - p.Pos.Z
-			if dx*dx+dy*dy+dz*dz < projHitD2 {
-				mobHits = append(mobHits, mobHit{id: p.TargetID})
-				delete(s.projectiles, id)
-			}
-		}
-		// Если цель исчезла — снаряд летит дальше до TTL.
-	}
-	s.projMu.Unlock()
-
-	// Применяем попадания в мобов.
-	if len(mobHits) > 0 {
-		type killDrop struct {
-			pos      protocol.Vector3
-			kind     string
-			mobInv   map[string]int
-		}
-		var kills []killDrop
-
-		s.mobsMu.Lock()
-		for _, h := range mobHits {
-			mo, ok := s.mobs[h.id]
-			if !ok {
-				continue
-			}
-			mo.HP -= mobAttackDamage
-			if mo.HP <= 0 {
-				kills = append(kills, killDrop{
-					pos:    mo.Pos,
-					kind:   mo.Kind,
-					mobInv: mo.Inventory,
-				})
-				delete(s.mobs, h.id)
-				s.log.Info("mob killed by projectile", "id", h.id, "kind", mo.Kind)
-			} else {
-				s.log.Info("mob hit by projectile", "id", h.id, "hp", mo.HP)
-			}
-		}
-		s.mobsMu.Unlock()
-
-		// Спавним дроп после unlock.
-		if len(kills) > 0 {
-			s.resourcesMu.Lock()
-			for _, k := range kills {
-				switch k.kind {
-				case "hostile":
-					for i := 0; i < 10; i++ {
-						rid := newID()
-						theta := mrand.Float32() * 2 * math.Pi
-						rr := mrand.Float32() * 2.0
-						dx := float32(math.Cos(float64(theta))) * rr
-						dz := float32(math.Sin(float64(theta))) * rr
-						pp := protocol.ClampToSurface(protocol.Vector3{
-							X: k.pos.X + dx, Y: k.pos.Y, Z: k.pos.Z + dz,
-						})
-						s.resources[rid] = protocol.Resource{
-							ID: rid, Type: "spear",
-							X: pp.X, Y: pp.Y, Z: pp.Z,
-						}
-					}
-				case "collector":
-					for itemType, qty := range k.mobInv {
-						for i := 0; i < qty; i++ {
-							rid := newID()
-							theta := mrand.Float32() * 2 * math.Pi
-							rr := mrand.Float32() * 2.5
-							dx := float32(math.Cos(float64(theta))) * rr
-							dz := float32(math.Sin(float64(theta))) * rr
-							pp := protocol.ClampToSurface(protocol.Vector3{
-								X: k.pos.X + dx, Y: k.pos.Y, Z: k.pos.Z + dz,
-							})
-							s.resources[rid] = protocol.Resource{
-								ID: rid, Type: itemType,
-								X: pp.X, Y: pp.Y, Z: pp.Z,
-							}
-						}
-					}
-				}
-			}
-			s.resourcesMu.Unlock()
+		ps := target.State()
+		dx := ps.X - p.Pos.X
+		dy := ps.Y - p.Pos.Y
+		dz := ps.Z - p.Pos.Z
+		if dx*dx+dy*dy+dz*dz < projHitD2 {
+			target.damage(mobAttackDamage)
+			s.log.Info("mob spear hit", "target", p.TargetID, "dmg", mobAttackDamage)
+			delete(s.projectiles, id)
 		}
 	}
 }
@@ -1465,9 +1021,7 @@ func (s *Server) handleHitMob(c *Client, mobID string) {
 
 	if killed {
 		s.resourcesMu.Lock()
-		if kind == "pink" {
-			// Розовый — без дропа.
-		} else if kind == "collector" {
+		if kind == "collector" {
 			// Выпадают все собранные ресурсы компактной кучей.
 			for itemType, qty := range mobInv {
 				for i := 0; i < qty; i++ {
@@ -1526,275 +1080,6 @@ func (s *Server) handleHitMob(c *Client, mobID string) {
 	}
 	c.mu.Unlock()
 	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
-}
-
-func (s *Server) handleAcceptContract(c *Client, mobID, contractID string) {
-	s.mobsMu.Lock()
-	m, ok := s.mobs[mobID]
-	if !ok {
-		s.mobsMu.Unlock()
-		c.log.Warn("contract: mob not found")
-		return
-	}
-	if m.Kind != "pink" {
-		s.mobsMu.Unlock()
-		c.log.Warn("contract: not a pink mob")
-		return
-	}
-	if m.Contract != "" {
-		s.mobsMu.Unlock()
-		c.log.Warn("contract: mob already busy", "existing", m.Contract)
-		return
-	}
-	if contractID != "gather4" && contractID != "guard" {
-		s.mobsMu.Unlock()
-		c.log.Warn("contract: unknown id", "id", contractID)
-		return
-	}
-
-	// Проверяем цену.
-	switch contractID {
-	case "gather4":
-		if !c.consumeItem("fruit") {
-			s.mobsMu.Unlock()
-			c.log.Warn("contract: no fruit")
-			return
-		}
-	case "guard":
-		c.mu.Lock()
-		hasSpear := c.inventory["spear"] >= 10
-		if hasSpear {
-			c.inventory["spear"] -= 10
-		}
-		c.mu.Unlock()
-		if !hasSpear {
-			s.mobsMu.Unlock()
-			c.log.Warn("contract: not enough spears")
-			return
-		}
-	}
-
-	m.Contract = contractID
-	m.OwnerID = c.ID
-	if contractID == "gather4" {
-		m.Inventory = make(map[string]int)
-	}
-	s.mobsMu.Unlock()
-
-	c.log.Info("contract accepted", "mob", mobID, "contract", contractID)
-
-	c.mu.Lock()
-	inv := make(map[string]int, len(c.inventory))
-	for k, v := range c.inventory {
-		inv[k] = v
-	}
-	c.mu.Unlock()
-	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
-}
-
-const energyLinkRadiusD2 = 10.0 * 10.0
-const solarEnergyPerSec = 5
-const batteryMaxEnergy = 1000
-
-// --- Place handlers ---
-
-func (s *Server) handlePlaceSolar(c *Client, p protocol.PlaceSolar) {
-	if !c.consumeItem("solar") {
-		return
-	}
-	id := newID()
-	s.solarMu.Lock()
-	s.solar[id] = &Solar{ID: id, Pos: protocol.Vector3{X: p.X, Y: p.Y, Z: p.Z}, Yaw: p.Yaw}
-	s.solarMu.Unlock()
-
-	c.mu.Lock()
-	inv := make(map[string]int, len(c.inventory))
-	for k, v := range c.inventory {
-		inv[k] = v
-	}
-	c.mu.Unlock()
-	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
-	c.log.Info("solar placed", "id", id)
-}
-
-func (s *Server) handlePlaceBattery(c *Client, p protocol.PlaceBattery) {
-	if !c.consumeItem("battery") {
-		return
-	}
-	id := newID()
-	s.batteriesMu.Lock()
-	s.batteries[id] = &Battery{
-		ID: id, Pos: protocol.Vector3{X: p.X, Y: p.Y, Z: p.Z},
-		Yaw: p.Yaw, Energy: 0, MaxEnergy: batteryMaxEnergy,
-	}
-	s.batteriesMu.Unlock()
-
-	c.mu.Lock()
-	inv := make(map[string]int, len(c.inventory))
-	for k, v := range c.inventory {
-		inv[k] = v
-	}
-	c.mu.Unlock()
-	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
-	c.log.Info("battery placed", "id", id)
-}
-
-func (s *Server) handlePlaceFactory(c *Client, p protocol.PlaceFactory) {
-	if !c.consumeItem("factory") {
-		return
-	}
-	id := newID()
-	s.factoriesMu.Lock()
-	s.factories[id] = &Factory{ID: id, Pos: protocol.Vector3{X: p.X, Y: p.Y, Z: p.Z}, Yaw: p.Yaw}
-	s.factoriesMu.Unlock()
-
-	c.mu.Lock()
-	inv := make(map[string]int, len(c.inventory))
-	for k, v := range c.inventory {
-		inv[k] = v
-	}
-	c.mu.Unlock()
-	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
-	c.log.Info("factory placed", "id", id)
-}
-
-// --- Factory recipes ---
-
-type factoryRecipe struct {
-	need    map[string]int
-	energy  int
-	out     string
-	outQty  int
-}
-
-var factoryRecipes = map[string]factoryRecipe{
-	"steel":   {need: map[string]int{"ore": 5}, energy: 10, out: "steel", outQty: 1},
-	"gear":    {need: map[string]int{"stone": 2, "wood": 2}, energy: 20, out: "gear", outQty: 1},
-	"circuit": {need: map[string]int{"ore": 3, "liana": 1}, energy: 50, out: "circuit", outQty: 1},
-	"drone":   {need: map[string]int{"gear": 1, "circuit": 1}, energy: 100, out: "drone", outQty: 1},
-}
-
-// nearestBatteryLocked ищет ближайшую батарею (без блокировки — вызывать под batteriesMu.Lock).
-func (s *Server) nearestBatteryLocked(pos protocol.Vector3) *Battery {
-	var best *Battery
-	bestD2 := float32(energyLinkRadiusD2)
-	for _, b := range s.batteries {
-		dx := b.Pos.X - pos.X
-		dy := b.Pos.Y - pos.Y
-		dz := b.Pos.Z - pos.Z
-		d2 := dx*dx + dy*dy + dz*dz
-		if d2 < bestD2 {
-			best = b
-			bestD2 = d2
-		}
-	}
-	return best
-}
-
-func (s *Server) handleOpenFactory(c *Client, factoryID string) {
-	s.factoriesMu.RLock()
-	_, ok := s.factories[factoryID]
-	s.factoriesMu.RUnlock()
-	if !ok {
-		c.log.Warn("factory: not found")
-		return
-	}
-	c.log.Info("factory opened", "id", factoryID)
-}
-
-func (s *Server) handleCraftFactory(c *Client, factoryID, recipeID string) {
-	s.factoriesMu.RLock()
-	f, ok := s.factories[factoryID]
-	s.factoriesMu.RUnlock()
-	if !ok {
-		c.log.Warn("factory craft: not found")
-		return
-	}
-
-	r, ok := factoryRecipes[recipeID]
-	if !ok {
-		c.log.Warn("factory craft: unknown recipe", "id", recipeID)
-		return
-	}
-
-	// Проверяем ресурсы.
-	c.mu.Lock()
-	for item, q := range r.need {
-		if c.inventory[item] < q {
-			c.mu.Unlock()
-			c.log.Warn("factory craft: not enough resources", "item", item)
-			return
-		}
-	}
-	c.mu.Unlock()
-
-	// Ищем батарею для питания.
-	s.batteriesMu.Lock()
-	b := s.nearestBatteryLocked(f.Pos)
-	if b == nil {
-		s.batteriesMu.Unlock()
-		c.log.Warn("factory craft: no battery in range")
-		return
-	}
-	if b.Energy < r.energy {
-		s.batteriesMu.Unlock()
-		c.log.Warn("factory craft: not enough energy",
-			"have", b.Energy, "need", r.energy)
-		return
-	}
-	b.Energy -= r.energy
-	s.batteriesMu.Unlock()
-
-	// Списываем ресурсы и выдаём предмет.
-	c.mu.Lock()
-	for item, q := range r.need {
-		c.inventory[item] -= q
-		if c.inventory[item] <= 0 {
-			delete(c.inventory, item)
-		}
-	}
-	c.inventory[r.out] += r.outQty
-	inv := make(map[string]int, len(c.inventory))
-	for k, v := range c.inventory {
-		inv[k] = v
-	}
-	c.mu.Unlock()
-
-	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
-	c.log.Info("factory crafted", "id", factoryID, "recipe", recipeID, "out", r.out)
-}
-
-// tickEnergy — панели заряжают ближайшие батареи.
-func (s *Server) tickEnergy(dt float32) {
-	// Снимок панелей.
-	s.solarMu.RLock()
-	panels := make([]*Solar, 0, len(s.solar))
-	for _, p := range s.solar {
-		panels = append(panels, p)
-	}
-	s.solarMu.RUnlock()
-
-	if len(panels) == 0 {
-		return
-	}
-
-	// Сколько энергии даёт одна панель за этот тик.
-	gain := float32(solarEnergyPerSec) * dt
-	energyPerPanel := int(gain * 100) // фиксированная точка: gain*100, чтобы копить копейки
-
-	s.batteriesMu.Lock()
-	defer s.batteriesMu.Unlock()
-	for _, p := range panels {
-		b := s.nearestBatteryLocked(p.Pos)
-		if b == nil {
-			continue
-		}
-		// Накапливаем «копейки» в отдельном поле — упрощаю: прибавляем целое.
-		b.Energy += energyPerPanel / 100
-		if b.Energy > b.MaxEnergy {
-			b.Energy = b.MaxEnergy
-		}
-	}
 }
 
 func (s *Server) spawnWells(n int) {
@@ -2426,37 +1711,6 @@ func (s *Server) handleMessage(c *Client, env *protocol.Envelope) {
 		if err := env.Decode(&cm); err != nil {
 			return
 		}
-		// Чит-команда /allinv — выдать все предметы по 100.
-		if cm.Text == "/allinv" {
-			allItems := []string{
-				"stone", "wood", "ore", "fruit", "meat", "spear", "torch",
-				"water", "liana", "leash", "house", "saddle", "boat",
-				"solar", "battery", "factory",
-				"steel", "gear", "circuit", "drone",
-			}
-			c.mu.Lock()
-			for _, it := range allItems {
-				c.inventory[it] = 100
-			}
-			inv := make(map[string]int, len(c.inventory))
-			for k, v := range c.inventory {
-				inv[k] = v
-			}
-			c.mu.Unlock()
-			c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
-			c.log.Info("cheat: allinv", "count", len(allItems))
-			break
-		}
-		// Чит-команда /clearinv — очистить инвентарь.
-		if cm.Text == "/clearinv" {
-			c.mu.Lock()
-			c.inventory = make(map[string]int)
-			inv := make(map[string]int)
-			c.mu.Unlock()
-			c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
-			c.log.Info("cheat: clearinv")
-			break
-		}
 		// Чит-команды вида /get<item><qty>, например /getfruit100.
 		if len(cm.Text) > 4 && cm.Text[:4] == "/get" {
 			rest := cm.Text[4:]
@@ -2615,42 +1869,6 @@ func (s *Server) handleMessage(c *Client, env *protocol.Envelope) {
 			return
 		}
 		s.handleHitMob(c, p.MobID)
-	case protocol.TypeAcceptContract:
-		var p protocol.AcceptContract
-		if err := env.Decode(&p); err != nil {
-			return
-		}
-		s.handleAcceptContract(c, p.MobID, p.ContractID)
-	case protocol.TypePlaceSolar:
-		var p protocol.PlaceSolar
-		if err := env.Decode(&p); err != nil {
-			return
-		}
-		s.handlePlaceSolar(c, p)
-	case protocol.TypePlaceBattery:
-		var p protocol.PlaceBattery
-		if err := env.Decode(&p); err != nil {
-			return
-		}
-		s.handlePlaceBattery(c, p)
-	case protocol.TypePlaceFactory:
-		var p protocol.PlaceFactory
-		if err := env.Decode(&p); err != nil {
-			return
-		}
-		s.handlePlaceFactory(c, p)
-	case protocol.TypeOpenFactory:
-		var p protocol.OpenFactory
-		if err := env.Decode(&p); err != nil {
-			return
-		}
-		s.handleOpenFactory(c, p.FactoryID)
-	case protocol.TypeCraftFactory:
-		var p protocol.CraftFactory
-		if err := env.Decode(&p); err != nil {
-			return
-		}
-		s.handleCraftFactory(c, p.FactoryID, p.Recipe)
 	}
 }
 
@@ -2711,7 +1929,6 @@ func (s *Server) tickLoop() {
 			s.tickProjectiles(float32(1.0 / float64(s.tickRate)))
 			s.tickBreeding()
 			s.tickResources()
-			s.tickEnergy(float32(1.0 / float64(s.tickRate)))
 			s.broadcastSnapshot()
 		case <-s.done:
 			return
@@ -2799,14 +2016,12 @@ func (s *Server) broadcastSnapshot() {
 	mobs := make([]protocol.Mob, 0, len(s.mobs))
 	for _, m := range s.mobs {
 		mobs = append(mobs, protocol.Mob{
-			ID:       m.ID,
-			X:        m.Pos.X,
-			Y:        m.Pos.Y,
-			Z:        m.Pos.Z,
-			HP:       m.HP,
-			Kind:     m.Kind,
-			Contract: m.Contract,
-			OwnerID:  m.OwnerID,
+			ID:   m.ID,
+			X:    m.Pos.X,
+			Y:    m.Pos.Y,
+			Z:    m.Pos.Z,
+			HP:   m.HP,
+			Kind: m.Kind,
 		})
 	}
 	s.mobsMu.RUnlock()
@@ -2839,35 +2054,6 @@ func (s *Server) broadcastSnapshot() {
 	}
 	s.housesMu.RUnlock()
 
-	s.solarMu.RLock()
-	solars := make([]protocol.Solar, 0, len(s.solar))
-	for _, sl := range s.solar {
-		solars = append(solars, protocol.Solar{
-			ID: sl.ID, X: sl.Pos.X, Y: sl.Pos.Y, Z: sl.Pos.Z, Yaw: sl.Yaw,
-		})
-	}
-	s.solarMu.RUnlock()
-
-	s.batteriesMu.RLock()
-	batteries := make([]protocol.Battery, 0, len(s.batteries))
-	for _, b := range s.batteries {
-		batteries = append(batteries, protocol.Battery{
-			ID: b.ID, X: b.Pos.X, Y: b.Pos.Y, Z: b.Pos.Z, Yaw: b.Yaw,
-			Energy: b.Energy, MaxEnergy: b.MaxEnergy,
-		})
-	}
-	s.batteriesMu.RUnlock()
-
-	s.factoriesMu.RLock()
-	factories := make([]protocol.Factory, 0, len(s.factories))
-	for _, f := range s.factories {
-		factories = append(factories, protocol.Factory{
-			ID: f.ID, X: f.Pos.X, Y: f.Pos.Y, Z: f.Pos.Z, Yaw: f.Yaw,
-			Crafting: f.Crafting, Progress: f.Progress,
-		})
-	}
-	s.factoriesMu.RUnlock()
-
 	s.mammothsMu.RLock()
 	mammoths := make([]protocol.Mammoth, 0, len(s.mammoths))
 	for _, m := range s.mammoths {
@@ -2898,9 +2084,6 @@ func (s *Server) broadcastSnapshot() {
 		Boats:       boats,
 		Mobs:        mobs,
 		Projectiles: projs,
-		Solar:       solars,
-		Batteries:   batteries,
-		Factories:   factories,
 	})
 	if err != nil {
 		return

@@ -2426,27 +2426,6 @@ func (s *Server) handleMessage(c *Client, env *protocol.Envelope) {
 		if err := env.Decode(&cm); err != nil {
 			return
 		}
-		// Чит-команда /allinv — выдать все предметы по 100.
-		if cm.Text == "/allinv" {
-			allItems := []string{
-				"stone", "wood", "ore", "fruit", "meat", "spear", "torch",
-				"water", "liana", "leash", "house", "saddle", "boat",
-				"solar", "battery", "factory",
-				"steel", "gear", "circuit", "drone",
-			}
-			c.mu.Lock()
-			for _, it := range allItems {
-				c.inventory[it] = 100
-			}
-			inv := make(map[string]int, len(c.inventory))
-			for k, v := range c.inventory {
-				inv[k] = v
-			}
-			c.mu.Unlock()
-			c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
-			c.log.Info("cheat: allinv", "count", len(allItems))
-			break
-		}
 		// Чит-команда /clearinv — очистить инвентарь.
 		if cm.Text == "/clearinv" {
 			c.mu.Lock()

@@ -1180,6 +1180,8 @@ func (a *App) drawHotbar() {
 	rl.DrawRectangleRec(panel, rl.NewColor(15, 15, 25, 200))
 	rl.DrawRectangleLinesEx(panel, 2, rl.NewColor(120, 120, 140, 255))
 
+	// Соберём первую строку из инвентаря
+	items := []string{}
 	inv := a.nc.Inventory()
 
 	for i := 0; i < slots; i++ {
@@ -1891,10 +1893,18 @@ func (a *App) drawHeldItem() {
 	if a.flight == nil || a.flight.Mode != input.ModeSurvival {
 		return
 	}
-	typ := a.heldItem()
-	if typ == "" {
+	// Найдём предмет в selectedSlot
+	items := []string{}
+	inv := a.nc.Inventory()
+	for _, t := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch", "water", "liana", "leash", "house", "saddle", "boat", "solar", "battery", "factory", "steel", "gear", "circuit", "drone"} {
+		if n, ok := inv[t]; ok && n > 0 {
+			items = append(items, t)
+		}
+	}
+	if a.selectedSlot >= len(items) {
 		return
 	}
+	typ := items[a.selectedSlot]
 	col := itemColor(typ)
 
 	// Локальные оси камеры
