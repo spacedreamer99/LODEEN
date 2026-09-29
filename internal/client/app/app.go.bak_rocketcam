@@ -846,10 +846,7 @@ func (a *App) updatePilotedRocket(dt float32) bool {
 	if rl.IsKeyDown(rl.KeyLeftControl) {
 		thrust = -1.0
 	}
-
-	// Куда направлена камера — туда и хотим направить нос ракеты.
-	fwNow := a.flight.Forward()
-	_ = a.nc.RocketInput(thrust, fwNow.X, fwNow.Y, fwNow.Z)
+	_ = a.nc.RocketInput(thrust, 0, 0)
 
 	// E — выйти.
 	if rl.IsKeyPressed(rl.KeyE) {
@@ -858,10 +855,6 @@ func (a *App) updatePilotedRocket(dt float32) bool {
 		a.log.Info("exit rocket sent")
 		return false
 	}
-
-	// Обработка вращения мышью — сначала, потом строим камеру.
-	mdRocket := rl.GetMouseDelta()
-	a.flight.UpdateLookOnly(dt, mdRocket)
 
 	// Камера следует за ракетой.
 	fw := a.flight.Forward()

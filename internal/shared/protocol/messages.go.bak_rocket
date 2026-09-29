@@ -44,10 +44,6 @@ const (
 	TypeAcceptContract  Type = "accept_contract"
 	TypeOpenFactory     Type = "open_factory"
 	TypeCraftFactory    Type = "craft_factory"
-	TypePlaceRocket     Type = "place_rocket"
-	TypeBoardRocket     Type = "board_rocket"
-	TypeExitRocket      Type = "exit_rocket"
-	TypeRocketInput     Type = "rocket_input"
 )
 
 type Envelope struct {
@@ -132,22 +128,6 @@ type Snapshot struct {
 	Solar       []Solar         `json:"solar"`
 	Batteries   []Battery       `json:"batteries"`
 	Factories   []Factory       `json:"factories"`
-	Rockets     []Rocket        `json:"rockets"`
-}
-
-type Rocket struct {
-	ID       string  `json:"id"`
-	X        float32 `json:"x"`
-	Y        float32 `json:"y"`
-	Z        float32 `json:"z"`
-	DX       float32 `json:"dx"`     // направление "вверх" (нормаль к планете)
-	DY       float32 `json:"dy"`
-	DZ       float32 `json:"dz"`
-	Fuel     int     `json:"fuel"`
-	MaxFuel  int     `json:"max_fuel"`
-	Piloted  bool    `json:"piloted"`
-	OwnerID  string  `json:"owner_id,omitempty"`
-	InOrbit  bool    `json:"in_orbit,omitempty"`
 }
 
 type Solar struct {
@@ -204,25 +184,6 @@ type OpenFactory struct {
 type CraftFactory struct {
 	FactoryID string `json:"factory_id"`
 	Recipe    string `json:"recipe"`
-}
-
-type PlaceRocket struct {
-	X   float32 `json:"x"`
-	Y   float32 `json:"y"`
-	Z   float32 `json:"z"`
-}
-
-type BoardRocket struct {
-	RocketID string `json:"rocket_id"`
-}
-
-type ExitRocket struct{}
-
-type RocketInput struct {
-	Thrust     float32 `json:"thrust"`      // -1..+1
-	TargetUpX  float32 `json:"target_up_x"` // куда хотим направить Up ракеты
-	TargetUpY  float32 `json:"target_up_y"`
-	TargetUpZ  float32 `json:"target_up_z"`
 }
 
 type Mob struct {

@@ -121,6 +121,26 @@ func (s *Server) broadcastSnapshot() {
 	}
 	s.factoriesMu.RUnlock()
 
+	s.rocketsMu.RLock()
+	rockets := make([]protocol.Rocket, 0, len(s.rockets))
+	for _, r := range s.rockets {
+		rockets = append(rockets, protocol.Rocket{
+			ID:      r.ID,
+			X:       r.Pos.X,
+			Y:       r.Pos.Y,
+			Z:       r.Pos.Z,
+			DX:      r.Up.X,
+			DY:      r.Up.Y,
+			DZ:      r.Up.Z,
+			Fuel:    r.Fuel,
+			MaxFuel: r.MaxFuel,
+			Piloted: r.Piloted,
+			OwnerID: r.OwnerID,
+			InOrbit: r.InOrbit,
+		})
+	}
+	s.rocketsMu.RUnlock()
+
 	s.mammothsMu.RLock()
 	mammoths := make([]protocol.Mammoth, 0, len(s.mammoths))
 	for _, m := range s.mammoths {
@@ -154,6 +174,7 @@ func (s *Server) broadcastSnapshot() {
 		Solar:       solars,
 		Batteries:   batteries,
 		Factories:   factories,
+		Rockets:     rockets,
 	})
 	if err != nil {
 		return

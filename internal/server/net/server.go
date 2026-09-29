@@ -64,6 +64,9 @@ type Server struct {
 	factoriesMu sync.RWMutex
 	factories   map[string]*Factory
 
+	rocketsMu sync.RWMutex
+	rockets   map[string]*Rocket
+
 	boatsMu sync.RWMutex
 	boats   map[string]*Boat
 
@@ -101,6 +104,7 @@ func New(addr string, tickRate int, log *slog.Logger, m *Metrics) *Server {
 	s.solar = make(map[string]*Solar)
 	s.batteries = make(map[string]*Battery)
 	s.factories = make(map[string]*Factory)
+	s.rockets = make(map[string]*Rocket)
 	s.boats = make(map[string]*Boat)
 	s.mobs = make(map[string]*Mob)
 	s.spawnMobs(5)
@@ -236,6 +240,17 @@ func (s *Server) handleConn(conn net.Conn) {
 	delete(s.clients, id)
 	s.mu.Unlock()
 	s.metrics.PlayersConnected.Dec()
+
+	// Освободить ракеты, лодки, мамонтов этого игрока.
+	s.rocketsMu.Lock()
+	for _, r := range s.rockets {
+		if r.OwnerID == id {
+			r.Piloted = false
+			r.OwnerID = ""
+			r.Thrust = 0
+		}
+	}
+	s.rocketsMu.Unlock()
 	_ = conn.Close()
 	<-writerDone
 	log.Info("player left", "nick", client.Nick)
@@ -302,6 +317,7 @@ func (s *Server) tickLoop() {
 			s.tickBreeding()
 			s.tickResources()
 			s.tickEnergy(float32(1.0 / float64(s.tickRate)))
+			s.tickRockets(float32(1.0 / float64(s.tickRate)))
 			s.broadcastSnapshot()
 		case <-s.done:
 			return

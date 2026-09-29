@@ -88,7 +88,7 @@ func (s *Server) handleMessage(c *Client, env *protocol.Envelope) {
 				"stone", "wood", "ore", "fruit", "meat", "spear", "torch",
 				"water", "liana", "leash", "house", "saddle", "boat",
 				"solar", "battery", "factory",
-				"steel", "gear", "circuit", "drone",
+				"steel", "gear", "circuit", "drone", "rocket",
 			}
 			c.mu.Lock()
 			for _, it := range allItems {
@@ -307,6 +307,26 @@ func (s *Server) handleMessage(c *Client, env *protocol.Envelope) {
 			return
 		}
 		s.handleCraftFactory(c, p.FactoryID, p.Recipe)
+	case protocol.TypePlaceRocket:
+		var p protocol.PlaceRocket
+		if err := env.Decode(&p); err != nil {
+			return
+		}
+		s.handlePlaceRocket(c, p)
+	case protocol.TypeBoardRocket:
+		var p protocol.BoardRocket
+		if err := env.Decode(&p); err != nil {
+			return
+		}
+		s.handleBoardRocket(c, p.RocketID)
+	case protocol.TypeExitRocket:
+		s.handleExitRocket(c)
+	case protocol.TypeRocketInput:
+		var p protocol.RocketInput
+		if err := env.Decode(&p); err != nil {
+			return
+		}
+		s.handleRocketInput(c, p)
 	}
 }
 

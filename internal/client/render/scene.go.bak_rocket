@@ -432,33 +432,6 @@ func DrawFactories(factories []protocol.Factory) {
 	}
 }
 
-func DrawRockets(rockets []protocol.Rocket) {
-	for _, r := range rockets {
-		// Строим ракету вдоль вектора Up (DX,DY,DZ).
-		base := rl.NewVector3(r.X, r.Y, r.Z)
-		top := rl.NewVector3(
-			r.X+r.DX*8, r.Y+r.DY*8, r.Z+r.DZ*8,
-		)
-		// Фюзеляж
-		rl.DrawCylinderEx(base, top, 0.6, 0.6, 8,
-			rl.NewColor(220, 220, 230, 255))
-		// Нос (конус) — от top до top+2*up
-		nosetip := rl.NewVector3(
-			r.X+r.DX*11, r.Y+r.DY*11, r.Z+r.DZ*11,
-		)
-		rl.DrawCylinderEx(top, nosetip, 0.6, 0.05, 8,
-			rl.NewColor(200, 60, 60, 255))
-		// Сопло
-		nozzleBase := rl.NewVector3(
-			r.X-r.DX*0.5, r.Y-r.DY*0.5, r.Z-r.DZ*0.5,
-		)
-		rl.DrawCylinderEx(base, nozzleBase, 0.6, 0.9, 8,
-			rl.NewColor(60, 60, 70, 255))
-
-
-	}
-}
-
 func DrawWells(wells []protocol.Well) {
 	blue := rl.NewColor(40, 110, 220, 255)
 	blueDark := rl.NewColor(20, 60, 140, 255)
