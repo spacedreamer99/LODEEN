@@ -13,3 +13,4 @@ tmp/
 *~
 res/editing_result_*
 res/*.png~
+*.bak_before_split
