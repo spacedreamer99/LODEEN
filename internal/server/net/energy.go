@@ -110,6 +110,7 @@ var factoryRecipes = map[string]factoryRecipe{
 	"gear":    {need: map[string]int{"stone": 2, "wood": 2}, energy: 20, out: "gear", outQty: 1},
 	"circuit": {need: map[string]int{"ore": 3, "liana": 1}, energy: 50, out: "circuit", outQty: 1},
 	"drone":   {need: map[string]int{"gear": 1, "circuit": 1}, energy: 100, out: "drone", outQty: 1},
+	"rocket":  {need: map[string]int{"circuit": 3, "steel": 5, "gear": 2}, energy: 500, out: "rocket", outQty: 1},
 }
 
 // nearestBatteryLocked ищет ближайшую батарею (без блокировки — вызывать под batteriesMu.Lock).

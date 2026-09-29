@@ -84,8 +84,6 @@ type App struct {
 	invSlots     [256]string
 	dragging     bool
 	dragFrom     int
-	rocketID      string
-	rocketBoardedAt time.Time
 }
 
 func New(cfg *config.Config, log *slog.Logger) *App {
@@ -207,16 +205,6 @@ func (a *App) updateMenu() {
 
 func (a *App) updatePlaying(dt float32) {
 	a.syncInvSlots()
-
-	// Пилотирование ракеты блокирует всё остальное.
-	if a.rocketID != "" && a.flight != nil {
-		if a.updatePilotedRocket(dt) {
-			return
-		}
-		// Ракета не найдена / не Piloted — выходим из режима.
-		a.rocketID = ""
-	}
-
 	// Диалоги блокируют всё остальное.
 	if a.showContract {
 		a.updateContract()
@@ -421,12 +409,6 @@ func (a *App) updatePlaying(dt float32) {
 				a.log.Warn("place factory", "err", err)
 			}
 			a.log.Info("place factory sent (LMB)")
-		case "rocket":
-			x, y, z, _ := a.placeForward(5.0)
-			if err := a.nc.PlaceRocket(x, y, z); err != nil {
-				a.log.Warn("place rocket", "err", err)
-			}
-			a.log.Info("place rocket sent (LMB)")
 		case "boat":
 			// Поставить лодку в 5 юнитах перед собой (только на воду).
 			fw := a.flight.Forward()
@@ -446,15 +428,6 @@ func (a *App) updatePlaying(dt float32) {
 				a.log.Info("saddle: no mammoth in reach")
 			}
 		case "":
-			if id := a.rocketInSight(); id != "" {
-				if err := a.nc.BoardRocket(id); err != nil {
-					a.log.Warn("board rocket", "err", err)
-				}
-				a.rocketID = id
-				a.rocketBoardedAt = time.Now()
-				a.log.Info("board rocket sent", "id", id)
-				return
-			}
 			if id := a.factoryInSight(); id != "" {
 				a.factoryID = id
 				a.showFactory = true
@@ -625,7 +598,6 @@ func (a *App) draw() {
 		render.DrawSolar(a.nc.Solar())
 		render.DrawBatteries(a.nc.Batteries())
 		render.DrawFactories(a.nc.Factories())
-		render.DrawRockets(a.nc.Rockets())
 		render.DrawBoats(a.nc.Boats())
 		render.DrawMobs(a.nc.Mobs())
 		projs := a.nc.Projectiles()
@@ -709,7 +681,6 @@ var factoryRecipeList = []factoryRecipeUI{
 	{id: "gear", name: "Gear", need: map[string]int{"stone": 2, "wood": 2}, energy: 20},
 	{id: "circuit", name: "Circuit", need: map[string]int{"ore": 3, "liana": 1}, energy: 50},
 	{id: "drone", name: "Drone", need: map[string]int{"gear": 1, "circuit": 1}, energy: 100},
-	{id: "rocket", name: "Rocket", need: map[string]int{"circuit": 3, "steel": 5, "gear": 2}, energy: 500},
 }
 
 func (a *App) updateFactory() {
@@ -802,79 +773,6 @@ func itoa(n int) string {
 		buf[i] = '-'
 	}
 	return string(buf[i:])
-}
-
-// updatePilotedRocket — если игрок в ракете, обновляет её состояние на клиенте.
-// Возвращает true если мы по-прежнему в ракете.
-func (a *App) updatePilotedRocket(dt float32) bool {
-	rs := a.nc.Rockets()
-
-	var found *protocol.Rocket
-	for i := range rs {
-		if rs[i].ID == a.rocketID {
-			found = &rs[i]
-			break
-		}
-	}
-
-	// Grace period: первые 3 секунды после board снапшот может ещё не прийти.
-	// Не сбрасываем rocketID, просто ждём.
-	graceful := time.Since(a.rocketBoardedAt) < 3*time.Second
-
-	if found == nil {
-		if graceful {
-			// ещё ждём подтверждения от сервера
-			return true
-		}
-		a.log.Info("rocket lost, leaving", "id", a.rocketID)
-		return false
-	}
-
-	// Синхронизация позиции игрока с ракетой.
-	a.flight.Pos = rl.NewVector3(
-		found.X+found.DX*1.5,
-		found.Y+found.DY*1.5,
-		found.Z+found.DZ*1.5,
-	)
-	a.flight.Vel = rl.NewVector3(0, 0, 0)
-
-	// Тяга по Space.
-	var thrust float32
-	if rl.IsKeyDown(rl.KeySpace) {
-		thrust = 1.0
-	}
-	if rl.IsKeyDown(rl.KeyLeftControl) {
-		thrust = -1.0
-	}
-
-	// Куда направлена камера — туда и хотим направить нос ракеты.
-	fwNow := a.flight.Forward()
-	_ = a.nc.RocketInput(thrust, fwNow.X, fwNow.Y, fwNow.Z)
-
-	// E — выйти.
-	if rl.IsKeyPressed(rl.KeyE) {
-		_ = a.nc.ExitRocket()
-		a.rocketID = ""
-		a.log.Info("exit rocket sent")
-		return false
-	}
-
-	// Обработка вращения мышью — сначала, потом строим камеру.
-	mdRocket := rl.GetMouseDelta()
-	a.flight.UpdateLookOnly(dt, mdRocket)
-
-	// Камера следует за ракетой.
-	fw := a.flight.Forward()
-	a.camera.Position = a.flight.Pos
-	a.camera.Target = rl.Vector3Add(a.flight.Pos, rl.Vector3Scale(fw, 100.0))
-	a.camera.Up = a.flight.CameraUp()
-
-	a.log.Info("rocket pilot tick",
-		"id", a.rocketID,
-		"x", found.X, "y", found.Y, "z", found.Z,
-		"fuel", found.Fuel,
-		"thrust", thrust)
-	return true
 }
 
 func (a *App) updateContract() {
@@ -1445,36 +1343,6 @@ func (a *App) wellInSight() string {
 // houseInSight возвращает ID ближайшего дома в радиусе 6 юнитов.
 // pinkMobInSight — ближайший розовый моб в конусе взгляда.
 // factoryInSight — ближайший завод в радиусе 6 юнитов и в конусе взгляда.
-// rocketInSight — ближайшая ракета в радиусе 8 юнитов и в конусе взгляда.
-func (a *App) rocketInSight() string {
-	rs := a.nc.Rockets()
-	cam := a.camera.Position
-	fw := a.flight.Forward()
-	var bestID string
-	bestD2 := float32(64.0)
-	for _, r := range rs {
-		dx := r.X - cam.X
-		dy := r.Y - cam.Y
-		dz := r.Z - cam.Z
-		d2 := dx*dx + dy*dy + dz*dz
-		if d2 > 64.0 {
-			continue
-		}
-		d := float32(math.Sqrt(float64(d2)))
-		if d > 0.01 {
-			dot := (dx*fw.X + dy*fw.Y + dz*fw.Z) / d
-			if dot < 0.3 {
-				continue
-			}
-		}
-		if d2 < bestD2 {
-			bestD2 = d2
-			bestID = r.ID
-		}
-	}
-	return bestID
-}
-
 func (a *App) factoryInSight() string {
 	fs := a.nc.Factories()
 	cam := a.camera.Position
@@ -1864,8 +1732,6 @@ func itemColor(typ string) rl.Color {
 		return rl.NewColor(80, 200, 120, 255)
 	case "drone":
 		return rl.NewColor(100, 150, 220, 255)
-	case "rocket":
-		return rl.NewColor(220, 80, 80, 255)
 	case "wood":
 		return rl.NewColor(120, 80, 40, 255)
 	case "ore":
@@ -1925,8 +1791,6 @@ func itemName(typ string) string {
 		return "Circuit"
 	case "drone":
 		return "Drone"
-	case "rocket":
-		return "Rocket"
 	}
 	return typ
 }
@@ -1994,7 +1858,7 @@ func (a *App) drawCraft() {
 		// требования
 		reqText := ""
 		canCraft := true
-		for _, k := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch", "water", "liana", "leash", "house", "saddle", "boat", "solar", "battery", "factory", "steel", "gear", "circuit", "drone", "rocket"} {
+		for _, k := range []string{"stone", "wood", "ore", "fruit", "meat", "spear", "torch", "water", "liana", "leash", "house", "saddle", "boat", "solar", "battery", "factory", "steel", "gear", "circuit", "drone"} {
 			if need, ok := rec.req[k]; ok {
 				have := inv[k]
 				reqText += fmt.Sprintf("%s %d/%d   ", k, have, need)

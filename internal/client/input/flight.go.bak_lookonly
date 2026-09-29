@@ -56,16 +56,6 @@ func New(pos rl.Vector3) *FlightController {
 	return fc
 }
 
-// UpdateLookOnly — только вращение камеры, без физики и движения.
-// Используется для режима пилотирования ракеты.
-func (f *FlightController) UpdateLookOnly(dt float32, mouseDelta rl.Vector2) {
-	if f.Mode == ModeSurvival {
-		f.updateSurvivalLook(mouseDelta)
-	} else {
-		f.updateCreativeLook(mouseDelta, dt)
-	}
-}
-
 func (f *FlightController) Update(dt float32, mouseDelta rl.Vector2) {
 	if f.Mode == ModeSurvival {
 		f.updateSurvivalLook(mouseDelta)

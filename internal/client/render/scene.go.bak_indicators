@@ -455,7 +455,29 @@ func DrawRockets(rockets []protocol.Rocket) {
 		rl.DrawCylinderEx(base, nozzleBase, 0.6, 0.9, 8,
 			rl.NewColor(60, 60, 70, 255))
 
+		// Индикатор топлива (красная полоса на боку — меняется по количеству)
+		if r.MaxFuel > 0 {
+			level := float32(r.Fuel) / float32(r.MaxFuel)
+			var ind rl.Color
+			switch {
+			case level > 0.66:
+				ind = rl.NewColor(60, 220, 100, 255)
+			case level > 0.33:
+				ind = rl.NewColor(230, 200, 60, 255)
+			default:
+				ind = rl.NewColor(220, 60, 60, 255)
+			}
+			mid := rl.NewVector3(
+				r.X+r.DX*3, r.Y+r.DY*3, r.Z+r.DZ*3,
+			)
+			rl.DrawSphere(mid, 0.8, ind)
+		}
 
+		// Если в орбите — фиолетовое свечение
+		if r.InOrbit {
+			rl.DrawSphere(rl.NewVector3(r.X, r.Y, r.Z), 1.5,
+				rl.NewColor(200, 100, 255, 100))
+		}
 	}
 }
 

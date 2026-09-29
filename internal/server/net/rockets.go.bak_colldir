@@ -1,0 +1,227 @@
+package net
+
+import (
+	"math"
+	"time"
+
+	"github.com/spacedreamer99/lodeen/internal/shared/protocol"
+)
+
+// Rocket — летающий объект. Ставится как house, садится ЛКМ пустой рукой.
+type Rocket struct {
+	ID      string
+	Pos     protocol.Vector3
+	Vel     protocol.Vector3
+	Up      protocol.Vector3 // нормаль к поверхности в момент старта
+	Yaw     float32
+	Fuel    int
+	MaxFuel int
+	Piloted bool
+	OwnerID string
+	InOrbit bool
+	Thrust  float32 // -1..+1
+	lastLogAt time.Time
+	fuelAccum float32
+}
+
+const (
+	rocketMaxFuel     = 100
+	rocketThrustAccel = 30.0  // ускорение при полной тяге
+	rocketFuelBurn    = 5.0   // единиц топлива в секунду при полной тяге
+	rocketGravity     = 40.0  // GM для простой гравитации
+	orbitHeight       = 200.0 // высота выхода на орбиту
+	rocketPitchSpeed  = 1.5   // рад/сек
+)
+
+func (s *Server) handlePlaceRocket(c *Client, p protocol.PlaceRocket) {
+	if !c.consumeItem("rocket") {
+		return
+	}
+	pos := protocol.Vector3{X: p.X, Y: p.Y, Z: p.Z}
+	pos = protocol.ClampToSurface(pos)
+
+	// Up — нормаль к планете в этой точке.
+	l := float32(math.Sqrt(float64(pos.X*pos.X + pos.Y*pos.Y + pos.Z*pos.Z)))
+	if l < 0.01 {
+		return
+	}
+	up := protocol.Vector3{X: pos.X / l, Y: pos.Y / l, Z: pos.Z / l}
+
+	id := newID()
+	s.rocketsMu.Lock()
+	s.rockets[id] = &Rocket{
+		ID:      id,
+		Pos:     pos,
+		Up:      up,
+		Fuel:    rocketMaxFuel,
+		MaxFuel: rocketMaxFuel,
+	}
+	s.rocketsMu.Unlock()
+
+	c.mu.Lock()
+	inv := make(map[string]int, len(c.inventory))
+	for k, v := range c.inventory {
+		inv[k] = v
+	}
+	c.mu.Unlock()
+	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
+	c.log.Info("rocket placed", "id", id,
+		"pos_x", pos.X, "pos_y", pos.Y, "pos_z", pos.Z,
+		"up_x", up.X, "up_y", up.Y, "up_z", up.Z,
+		"dist", l)
+}
+
+func (s *Server) handleBoardRocket(c *Client, rocketID string) {
+	ps := c.State()
+
+	s.rocketsMu.Lock()
+	r, ok := s.rockets[rocketID]
+	if !ok {
+		s.rocketsMu.Unlock()
+		c.log.Warn("rocket: not found")
+		return
+	}
+	if r.Piloted && r.OwnerID != c.ID {
+		s.rocketsMu.Unlock()
+		c.log.Warn("rocket: already piloted", "owner", r.OwnerID)
+		return
+	}
+	dx := r.Pos.X - ps.X
+	dy := r.Pos.Y - ps.Y
+	dz := r.Pos.Z - ps.Z
+	if dx*dx+dy*dy+dz*dz > 8.0*8.0 {
+		s.rocketsMu.Unlock()
+		c.log.Warn("rocket: too far")
+		return
+	}
+	r.Piloted = true
+	r.OwnerID = c.ID
+	s.rocketsMu.Unlock()
+	c.log.Info("rocket boarded", "id", rocketID)
+}
+
+func (s *Server) handleExitRocket(c *Client) {
+	s.rocketsMu.Lock()
+	defer s.rocketsMu.Unlock()
+	for _, r := range s.rockets {
+		if r.OwnerID == c.ID && r.Piloted {
+			r.Piloted = false
+			r.OwnerID = ""
+			c.log.Info("rocket exited", "id", r.ID)
+			return
+		}
+	}
+}
+
+func (s *Server) handleRocketInput(c *Client, p protocol.RocketInput) {
+	s.rocketsMu.Lock()
+	defer s.rocketsMu.Unlock()
+	for _, r := range s.rockets {
+		if r.OwnerID == c.ID && r.Piloted {
+			r.Thrust = p.Thrust
+			if p.Thrust != 0 {
+				s.log.Info("rocket thrust recv", "id", r.ID,
+					"thrust", p.Thrust, "fuel", r.Fuel)
+			}
+			return
+		}
+	}
+	s.log.Debug("rocket input: no piloted rocket for client", "id", c.ID)
+}
+
+func (s *Server) tickRockets(dt float32) {
+	s.rocketsMu.Lock()
+	defer s.rocketsMu.Unlock()
+
+	for _, r := range s.rockets {
+		// Непривязанная ракета — стоит на поверхности, физика выключена.
+		if !r.Piloted {
+			r.Pos = protocol.ClampToSurface(r.Pos)
+			l := float32(math.Sqrt(float64(r.Pos.X*r.Pos.X + r.Pos.Y*r.Pos.Y + r.Pos.Z*r.Pos.Z)))
+			if l > 0.01 {
+				r.Up = protocol.Vector3{X: r.Pos.X / l, Y: r.Pos.Y / l, Z: r.Pos.Z / l}
+			}
+			r.Vel = protocol.Vector3{}
+			r.Thrust = 0
+			continue
+		}
+
+		// Гравитация (GM/r², но с зажимом чтобы не взорвалось).
+		dist := float32(math.Sqrt(float64(r.Pos.X*r.Pos.X + r.Pos.Y*r.Pos.Y + r.Pos.Z*r.Pos.Z)))
+		if dist < 1 {
+			continue
+		}
+		g := float32(rocketGravity) * float32(protocol.PlanetRadius) * float32(protocol.PlanetRadius) / (dist * dist)
+		if g > 200 {
+			g = 200
+		}
+		// Направление к центру — минус нормаль.
+		invDist := 1.0 / dist
+		gx := -r.Pos.X * invDist * g
+		gy := -r.Pos.Y * invDist * g
+		gz := -r.Pos.Z * invDist * g
+
+		// Тяга (если пилотируется и есть топливо).
+		var tx, ty, tz float32
+		if r.Piloted && r.Thrust > 0 && r.Fuel > 0 {
+			// Накапливаем "дробное" топливо, списываем целыми единицами.
+			r.fuelAccum += rocketFuelBurn * dt * r.Thrust
+			for r.fuelAccum >= 1 && r.Fuel > 0 {
+				r.Fuel--
+				r.fuelAccum--
+			}
+			accel := rocketThrustAccel * r.Thrust
+			tx = r.Up.X * accel
+			ty = r.Up.Y * accel
+			tz = r.Up.Z * accel
+		}
+
+		// Debug — что передаём в интеграцию.
+		s.log.Debug("rocket forces",
+			"up", r.Up.X, r.Up.Y, r.Up.Z,
+			"g", gx, gy, gz,
+			"t", tx, ty, tz,
+			"vel_before", r.Vel.X, r.Vel.Y, r.Vel.Z)
+
+		// Интеграция.
+		r.Vel.X += (gx + tx) * dt
+		r.Vel.Y += (gy + ty) * dt
+		r.Vel.Z += (gz + tz) * dt
+
+		r.Pos.X += r.Vel.X * dt
+		r.Pos.Y += r.Vel.Y * dt
+		r.Pos.Z += r.Vel.Z * dt
+
+		// Расстояние от центра планеты после интеграции.
+		newDist := float32(math.Sqrt(float64(r.Pos.X*r.Pos.X + r.Pos.Y*r.Pos.Y + r.Pos.Z*r.Pos.Z)))
+
+		// Коллизия с поверхностью — прижать и обнулить скорость.
+		surfR := protocol.SurfaceRadius(r.Pos)
+		if newDist < surfR+1.5 {
+			scale := (surfR + 1.5) / newDist
+			r.Pos.X *= scale
+			r.Pos.Y *= scale
+			r.Pos.Z *= scale
+			r.Vel = protocol.Vector3{}
+			newDist = surfR + 1.5
+		}
+
+		// Debug — раз в секунду.
+		if r.Piloted && time.Since(r.lastLogAt) > time.Second {
+			r.lastLogAt = time.Now()
+			s.log.Info("rocket tick",
+				"id", r.ID,
+				"pos_x", r.Pos.X, "pos_y", r.Pos.Y, "pos_z", r.Pos.Z,
+				"vel_x", r.Vel.X, "vel_y", r.Vel.Y, "vel_z", r.Vel.Z,
+				"dist", newDist, "fuel", r.Fuel, "thrust", r.Thrust)
+		}
+
+		// Орбита — если высота превысила порог.
+		if !r.InOrbit && newDist > float32(orbitHeight) {
+			r.InOrbit = true
+			s.log.Info("rocket reached orbit", "id", r.ID, "dist", newDist)
+		}
+	}
+}
+
+var _ = time.Now

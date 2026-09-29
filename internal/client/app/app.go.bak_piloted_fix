@@ -85,7 +85,6 @@ type App struct {
 	dragging     bool
 	dragFrom     int
 	rocketID      string
-	rocketBoardedAt time.Time
 }
 
 func New(cfg *config.Config, log *slog.Logger) *App {
@@ -207,16 +206,6 @@ func (a *App) updateMenu() {
 
 func (a *App) updatePlaying(dt float32) {
 	a.syncInvSlots()
-
-	// Пилотирование ракеты блокирует всё остальное.
-	if a.rocketID != "" && a.flight != nil {
-		if a.updatePilotedRocket(dt) {
-			return
-		}
-		// Ракета не найдена / не Piloted — выходим из режима.
-		a.rocketID = ""
-	}
-
 	// Диалоги блокируют всё остальное.
 	if a.showContract {
 		a.updateContract()
@@ -451,7 +440,6 @@ func (a *App) updatePlaying(dt float32) {
 					a.log.Warn("board rocket", "err", err)
 				}
 				a.rocketID = id
-				a.rocketBoardedAt = time.Now()
 				a.log.Info("board rocket sent", "id", id)
 				return
 			}
@@ -802,79 +790,6 @@ func itoa(n int) string {
 		buf[i] = '-'
 	}
 	return string(buf[i:])
-}
-
-// updatePilotedRocket — если игрок в ракете, обновляет её состояние на клиенте.
-// Возвращает true если мы по-прежнему в ракете.
-func (a *App) updatePilotedRocket(dt float32) bool {
-	rs := a.nc.Rockets()
-
-	var found *protocol.Rocket
-	for i := range rs {
-		if rs[i].ID == a.rocketID {
-			found = &rs[i]
-			break
-		}
-	}
-
-	// Grace period: первые 3 секунды после board снапшот может ещё не прийти.
-	// Не сбрасываем rocketID, просто ждём.
-	graceful := time.Since(a.rocketBoardedAt) < 3*time.Second
-
-	if found == nil {
-		if graceful {
-			// ещё ждём подтверждения от сервера
-			return true
-		}
-		a.log.Info("rocket lost, leaving", "id", a.rocketID)
-		return false
-	}
-
-	// Синхронизация позиции игрока с ракетой.
-	a.flight.Pos = rl.NewVector3(
-		found.X+found.DX*1.5,
-		found.Y+found.DY*1.5,
-		found.Z+found.DZ*1.5,
-	)
-	a.flight.Vel = rl.NewVector3(0, 0, 0)
-
-	// Тяга по Space.
-	var thrust float32
-	if rl.IsKeyDown(rl.KeySpace) {
-		thrust = 1.0
-	}
-	if rl.IsKeyDown(rl.KeyLeftControl) {
-		thrust = -1.0
-	}
-
-	// Куда направлена камера — туда и хотим направить нос ракеты.
-	fwNow := a.flight.Forward()
-	_ = a.nc.RocketInput(thrust, fwNow.X, fwNow.Y, fwNow.Z)
-
-	// E — выйти.
-	if rl.IsKeyPressed(rl.KeyE) {
-		_ = a.nc.ExitRocket()
-		a.rocketID = ""
-		a.log.Info("exit rocket sent")
-		return false
-	}
-
-	// Обработка вращения мышью — сначала, потом строим камеру.
-	mdRocket := rl.GetMouseDelta()
-	a.flight.UpdateLookOnly(dt, mdRocket)
-
-	// Камера следует за ракетой.
-	fw := a.flight.Forward()
-	a.camera.Position = a.flight.Pos
-	a.camera.Target = rl.Vector3Add(a.flight.Pos, rl.Vector3Scale(fw, 100.0))
-	a.camera.Up = a.flight.CameraUp()
-
-	a.log.Info("rocket pilot tick",
-		"id", a.rocketID,
-		"x", found.X, "y", found.Y, "z", found.Z,
-		"fuel", found.Fuel,
-		"thrust", thrust)
-	return true
 }
 
 func (a *App) updateContract() {

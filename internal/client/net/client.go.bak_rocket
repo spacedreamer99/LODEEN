@@ -86,9 +86,6 @@ type Client struct {
 	batteries   []protocol.Battery
 	factoriesMu sync.RWMutex
 	factories   []protocol.Factory
-
-	rocketsMu sync.RWMutex
-	rockets   []protocol.Rocket
 }
 
 func New(log *slog.Logger) *Client {
@@ -401,33 +398,6 @@ func (c *Client) Batteries() []protocol.Battery {
 	return out
 }
 
-func (c *Client) Rockets() []protocol.Rocket {
-	c.rocketsMu.RLock()
-	defer c.rocketsMu.RUnlock()
-	out := make([]protocol.Rocket, len(c.rockets))
-	copy(out, c.rockets)
-	return out
-}
-
-func (c *Client) PlaceRocket(x, y, z float32) error {
-	return c.send(protocol.TypePlaceRocket, protocol.PlaceRocket{X: x, Y: y, Z: z})
-}
-
-func (c *Client) BoardRocket(id string) error {
-	return c.send(protocol.TypeBoardRocket, protocol.BoardRocket{RocketID: id})
-}
-
-func (c *Client) ExitRocket() error {
-	return c.send(protocol.TypeExitRocket, protocol.ExitRocket{})
-}
-
-func (c *Client) RocketInput(thrust, upX, upY, upZ float32) error {
-	return c.send(protocol.TypeRocketInput, protocol.RocketInput{
-		Thrust:    thrust,
-		TargetUpX: upX, TargetUpY: upY, TargetUpZ: upZ,
-	})
-}
-
 func (c *Client) Factories() []protocol.Factory {
 	c.factoriesMu.RLock()
 	defer c.factoriesMu.RUnlock()
@@ -676,11 +646,6 @@ func (c *Client) handle(env protocol.Envelope) {
 		c.factories = make([]protocol.Factory, len(s.Factories))
 		copy(c.factories, s.Factories)
 		c.factoriesMu.Unlock()
-
-		c.rocketsMu.Lock()
-		c.rockets = make([]protocol.Rocket, len(s.Rockets))
-		copy(c.rockets, s.Rockets)
-		c.rocketsMu.Unlock()
 	case protocol.TypeChat:
 		var cm protocol.ChatMessage
 		_ = env.Decode(&cm)
