@@ -51,6 +51,7 @@ type Client struct {
 	earthMu  sync.RWMutex
 	earthPos protocol.Vector3
 	earthVel protocol.Vector3
+	lastTick uint64
 
 	resourcesMu sync.RWMutex
 	resources   []protocol.Resource
@@ -108,6 +109,12 @@ func (c *Client) EarthPos() protocol.Vector3 {
 	c.earthMu.RLock()
 	defer c.earthMu.RUnlock()
 	return c.earthPos
+}
+
+func (c *Client) LastSnapshotTick() uint64 {
+	c.earthMu.RLock()
+	defer c.earthMu.RUnlock()
+	return c.lastTick
 }
 
 func (c *Client) EarthVel() protocol.Vector3 {
@@ -697,6 +704,7 @@ func (c *Client) handle(env protocol.Envelope) {
 		c.earthMu.Lock()
 		c.earthPos = s.EarthPos
 		c.earthVel = s.EarthVel
+		c.lastTick = s.Tick
 		c.earthMu.Unlock()
 
 		// Ракеты теперь в helio — без конверта в geo.

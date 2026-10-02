@@ -302,27 +302,53 @@ func (s *Server) broadcast(t protocol.Type, data any) {
 
 func (s *Server) tickLoop() {
 	defer s.wg.Done()
-	interval := time.Second / time.Duration(s.tickRate)
-	t := time.NewTicker(interval)
-	defer t.Stop()
+
+	tickDur := time.Duration(float64(time.Second) / float64(s.tickRate))
+	next := time.Now().Add(tickDur)
+	lastTick := time.Now()
+
 	for {
 		select {
-		case <-t.C:
-			s.tick++
-			s.metrics.TicksTotal.Inc()
-			s.tickHunger(1.0 / float64(s.tickRate))
-			s.tickMammoths(float32(1.0 / float64(s.tickRate)))
-			s.tickBoats()
-			s.tickMobs(float32(1.0 / float64(s.tickRate)))
-			s.tickProjectiles(float32(1.0 / float64(s.tickRate)))
-			s.tickBreeding()
-			s.tickResources()
-			s.tickEnergy(float32(1.0 / float64(s.tickRate)))
-			s.world.Tick(float32(1.0 / float64(s.tickRate)))
-			s.tickRockets(float32(1.0 / float64(s.tickRate)))
-			s.broadcastSnapshot()
 		case <-s.done:
 			return
+		default:
+		}
+
+		now := time.Now()
+		if now.Before(next) {
+			time.Sleep(next.Sub(now))
+			continue
+		}
+
+		// Физика — ВСЕГДА fixed dt. Это критично: иначе снапшоты
+		// идут неравномерно, и клиент интерполирует с дрожанием.
+		realDt := now.Sub(lastTick).Seconds()
+		lastTick = now
+		_ = realDt
+
+		// Fixed dt.
+		dtF := float32(1.0) / float32(s.tickRate)
+		dt := float64(dtF)
+
+		s.tick++
+		s.metrics.TicksTotal.Inc()
+		s.tickHunger(dt)
+		s.tickMammoths(dtF)
+		s.tickBoats()
+		s.tickMobs(dtF)
+		s.tickProjectiles(dtF)
+		s.tickBreeding()
+		s.tickResources()
+		s.tickEnergy(dtF)
+		s.world.Tick(dtF)
+		s.tickRockets(dtF)
+		s.broadcastSnapshot()
+
+		// Следующий тик.
+		next = next.Add(tickDur)
+		// Если сильно отстали — сбросить планку.
+		if time.Since(next) > 200*time.Millisecond {
+			next = time.Now().Add(tickDur)
 		}
 	}
 }

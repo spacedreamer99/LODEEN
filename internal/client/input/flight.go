@@ -36,12 +36,17 @@ type FlightController struct {
 
 	// Bodies — для гравитации и «верха». Устанавливаются app.go каждый кадр.
 	// Pos живёт в helio (мировой фрейм). EarthPos — текущая позиция Земли.
-	EarthPos  rl.Vector3
-	SunPos    rl.Vector3
-	EarthVel  rl.Vector3
-	HelioInit bool
+	EarthPos   rl.Vector3
+	SunPos     rl.Vector3
+	EarthVel   rl.Vector3
+	HelioInit  bool
+	smoothMinR float32
 
 	AttachedBody string
+
+	// Debug
+	lastOnGround bool
+	lastJumpAt   int64
 }
 
 func New(pos rl.Vector3) *FlightController {
@@ -183,26 +188,23 @@ func (f *FlightController) updateSurvival(dt float32) {
 	rel := rl.Vector3Subtract(f.Pos, f.EarthPos)
 	dir := rl.Vector3Normalize(rel)
 	th := protocol.TerrainHeight(dir.X, dir.Y, dir.Z)
-	overWater := th < protocol.SeaLevel // над водой или на воде
-	swimming := overWater && !f.InBoat  // пешком в воде
+	overWater := th < protocol.SeaLevel
+	swimming := overWater && !f.InBoat
 
 	ws := float32(walkSpeed)
 	switch {
 	case f.Riding:
-		// На мамонте — быстро.
 		ws *= 2.5
 	case f.InBoat && overWater:
-		// На лодке по воде — быстро.
 		ws *= 2.0
 	case f.InBoat && !overWater:
-		// На лодке по суше — очень медленно.
 		ws *= 0.15
 	case swimming:
-		// Пешком в воде — медленно.
 		ws *= 0.35
 	}
 
 	surfaceR := protocol.SurfaceRadius(protocol.Vector3{X: dir.X, Y: dir.Y, Z: dir.Z})
+	// Коллизия использует РЕАЛЬНЫЙ minR — сглаживание только для отображения.
 	minR := surfaceR + protocol.PlayerHeight
 
 	dist := rl.Vector3Length(rel)
@@ -211,10 +213,15 @@ func (f *FlightController) updateSurvival(dt float32) {
 	}
 	up := rl.Vector3Scale(rel, 1/dist)
 
-	f.Vel = rl.Vector3Subtract(f.Vel, rl.Vector3Scale(up, gravity*dt))
+	// Relative velocity.
+	relVel := rl.Vector3Subtract(f.Vel, f.EarthVel)
+
+	// Gravity.
+	relVel = rl.Vector3Subtract(relVel, rl.Vector3Scale(up, gravity*dt))
+
 	onGround := dist <= minR+groundEps
 
-	// Движение — по TangentForward (тело), не по камере.
+	// WASD движение по TangentForward.
 	fwTan := f.TangentForward
 	rt := rl.Vector3Normalize(rl.Vector3CrossProduct(fwTan, up))
 
@@ -235,32 +242,53 @@ func (f *FlightController) updateSurvival(dt float32) {
 		wish = rl.Vector3Scale(wish, ws/l)
 	}
 
-	velTan := rl.Vector3Subtract(f.Vel, rl.Vector3Scale(up, rl.Vector3DotProduct(f.Vel, up)))
+	velTan := rl.Vector3Subtract(relVel, rl.Vector3Scale(up, rl.Vector3DotProduct(relVel, up)))
 	if onGround {
 		velTan = rl.Vector3Add(velTan, rl.Vector3Scale(rl.Vector3Subtract(wish, velTan), 0.25))
 		velTan = rl.Vector3Scale(velTan, 0.75)
 	} else {
 		velTan = rl.Vector3Add(velTan, rl.Vector3Scale(rl.Vector3Subtract(wish, velTan), 0.05))
 	}
-	velRad := rl.Vector3Scale(up, rl.Vector3DotProduct(f.Vel, up))
-	f.Vel = rl.Vector3Add(velRad, velTan)
+	velRad := rl.Vector3Scale(up, rl.Vector3DotProduct(relVel, up))
+	relVel = rl.Vector3Add(velRad, velTan)
 
-	if onGround && rl.IsKeyDown(rl.KeySpace) {
-		f.Vel = rl.Vector3Add(f.Vel, rl.Vector3Scale(up, jumpSpeed))
+	if onGround && rl.IsKeyPressed(rl.KeySpace) {
+		relVel = rl.Vector3Add(relVel, rl.Vector3Scale(up, jumpSpeed))
+		onGround = false
 	}
 
-	f.Pos = rl.Vector3Add(f.Pos, rl.Vector3Scale(f.Vel, dt))
+	// Интеграция позиции в helio.
+	helioVel := rl.Vector3Add(f.EarthVel, relVel)
+	f.Pos = rl.Vector3Add(f.Pos, rl.Vector3Scale(helioVel, dt))
 
+	// Коллизия — используем REAL minR, БЕЗ сглаживания.
 	relAfter := rl.Vector3Subtract(f.Pos, f.EarthPos)
 	distAfter := rl.Vector3Length(relAfter)
 	if distAfter < minR {
+		// Push out вдоль нормали.
 		scale := minR / distAfter
 		relAfter = rl.Vector3Scale(relAfter, scale)
 		f.Pos = rl.Vector3Add(f.EarthPos, relAfter)
 		nr := rl.Vector3Normalize(relAfter)
-		vr := rl.Vector3DotProduct(f.Vel, nr)
+		vr := rl.Vector3DotProduct(relVel, nr)
 		if vr < 0 {
-			f.Vel = rl.Vector3Subtract(f.Vel, rl.Vector3Scale(nr, vr))
+			// Гасим только отрицательную (внутреннюю) компоненту.
+			relVel = rl.Vector3Subtract(relVel, rl.Vector3Scale(nr, vr))
+		}
+	}
+
+	// Сохраняем helio velocity.
+	f.Vel = rl.Vector3Add(f.EarthVel, relVel)
+
+	// Осторожное сглаживание для отображения (не для физики).
+	if f.smoothMinR == 0 {
+		f.smoothMinR = minR
+	} else {
+		diff := minR - f.smoothMinR
+		if diff > 1.0 || diff < -1.0 {
+			f.smoothMinR = minR
+		} else {
+			f.smoothMinR += diff * 0.1
 		}
 	}
 
