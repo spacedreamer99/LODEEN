@@ -48,6 +48,10 @@ type Client struct {
 
 	chatCh chan protocol.ChatMessage
 
+	earthMu  sync.RWMutex
+	earthPos protocol.Vector3
+	earthVel protocol.Vector3
+
 	resourcesMu sync.RWMutex
 	resources   []protocol.Resource
 
@@ -98,6 +102,18 @@ func New(log *slog.Logger) *Client {
 		chatCh:    make(chan protocol.ChatMessage, 128),
 		inventory: make(map[string]int),
 	}
+}
+
+func (c *Client) EarthPos() protocol.Vector3 {
+	c.earthMu.RLock()
+	defer c.earthMu.RUnlock()
+	return c.earthPos
+}
+
+func (c *Client) EarthVel() protocol.Vector3 {
+	c.earthMu.RLock()
+	defer c.earthMu.RUnlock()
+	return c.earthVel
 }
 
 func (c *Client) Status() Status {
@@ -678,6 +694,12 @@ func (c *Client) handle(env protocol.Envelope) {
 		copy(c.factories, s.Factories)
 		c.factoriesMu.Unlock()
 
+		c.earthMu.Lock()
+		c.earthPos = s.EarthPos
+		c.earthVel = s.EarthVel
+		c.earthMu.Unlock()
+
+		// Ракеты теперь в helio — без конверта в geo.
 		c.rocketsMu.Lock()
 		c.rockets = make([]protocol.Rocket, len(s.Rockets))
 		copy(c.rockets, s.Rockets)
