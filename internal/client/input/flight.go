@@ -42,6 +42,12 @@ type FlightController struct {
 	HelioInit  bool
 	smoothMinR float32
 
+	// Основное состояние игрока в системе Земли.
+	// f.Pos/f.Vel = earthPos/earthVel + RelPos/RelVel (для рендера).
+	RelPos  rl.Vector3
+	RelVel  rl.Vector3
+	RelInit bool
+
 	AttachedBody string
 
 	// Debug
@@ -185,8 +191,24 @@ func (f *FlightController) updateSurvival(dt float32) {
 		groundEps = 0.5
 	)
 	oldPos := f.Pos
-	rel := rl.Vector3Subtract(f.Pos, f.EarthPos)
-	dir := rl.Vector3Normalize(rel)
+
+	// Инициализация RelPos/RelVel — один раз.
+	if !f.RelInit {
+		f.RelPos = rl.Vector3Subtract(f.Pos, f.EarthPos)
+		f.RelVel = rl.Vector3Subtract(f.Vel, f.EarthVel)
+		f.RelInit = true
+	}
+
+	// Работаем ТОЛЬКО с rel-состоянием. f.Pos/f.Vel — производные.
+	rel := f.RelPos
+	relVel := f.RelVel
+
+	dist := rl.Vector3Length(rel)
+	if dist < 0.01 {
+		dist = 0.01
+	}
+	dir := rl.Vector3Scale(rel, 1/dist)
+
 	th := protocol.TerrainHeight(dir.X, dir.Y, dir.Z)
 	overWater := th < protocol.SeaLevel
 	swimming := overWater && !f.InBoat
@@ -204,24 +226,16 @@ func (f *FlightController) updateSurvival(dt float32) {
 	}
 
 	surfaceR := protocol.SurfaceRadius(protocol.Vector3{X: dir.X, Y: dir.Y, Z: dir.Z})
-	// Коллизия использует РЕАЛЬНЫЙ minR — сглаживание только для отображения.
 	minR := surfaceR + protocol.PlayerHeight
 
-	dist := rl.Vector3Length(rel)
-	if dist < 0.01 {
-		dist = 0.01
-	}
-	up := rl.Vector3Scale(rel, 1/dist)
+	up := dir
 
-	// Relative velocity.
-	relVel := rl.Vector3Subtract(f.Vel, f.EarthVel)
-
-	// Gravity.
+	// Гравитация.
 	relVel = rl.Vector3Subtract(relVel, rl.Vector3Scale(up, gravity*dt))
 
 	onGround := dist <= minR+groundEps
 
-	// WASD движение по TangentForward.
+	// WASD.
 	fwTan := f.TangentForward
 	rt := rl.Vector3Normalize(rl.Vector3CrossProduct(fwTan, up))
 
@@ -252,45 +266,33 @@ func (f *FlightController) updateSurvival(dt float32) {
 	velRad := rl.Vector3Scale(up, rl.Vector3DotProduct(relVel, up))
 	relVel = rl.Vector3Add(velRad, velTan)
 
-	if onGround && rl.IsKeyPressed(rl.KeySpace) {
+	if onGround && rl.IsKeyDown(rl.KeySpace) {
 		relVel = rl.Vector3Add(relVel, rl.Vector3Scale(up, jumpSpeed))
 		onGround = false
 	}
 
-	// Интеграция позиции в helio.
-	helioVel := rl.Vector3Add(f.EarthVel, relVel)
-	f.Pos = rl.Vector3Add(f.Pos, rl.Vector3Scale(helioVel, dt))
+	// Интеграция rel-позиции.
+	rel = rl.Vector3Add(rel, rl.Vector3Scale(relVel, dt))
 
-	// Коллизия — используем REAL minR, БЕЗ сглаживания.
-	relAfter := rl.Vector3Subtract(f.Pos, f.EarthPos)
-	distAfter := rl.Vector3Length(relAfter)
-	if distAfter < minR {
-		// Push out вдоль нормали.
-		scale := minR / distAfter
-		relAfter = rl.Vector3Scale(relAfter, scale)
-		f.Pos = rl.Vector3Add(f.EarthPos, relAfter)
-		nr := rl.Vector3Normalize(relAfter)
+	// Коллизия в rel-координатах.
+	newDist := rl.Vector3Length(rel)
+	if newDist < minR {
+		scale := minR / newDist
+		rel = rl.Vector3Scale(rel, scale)
+		nr := rl.Vector3Normalize(rel)
 		vr := rl.Vector3DotProduct(relVel, nr)
 		if vr < 0 {
-			// Гасим только отрицательную (внутреннюю) компоненту.
 			relVel = rl.Vector3Subtract(relVel, rl.Vector3Scale(nr, vr))
 		}
 	}
 
-	// Сохраняем helio velocity.
-	f.Vel = rl.Vector3Add(f.EarthVel, relVel)
+	// Сохраняем основное состояние.
+	f.RelPos = rel
+	f.RelVel = relVel
 
-	// Осторожное сглаживание для отображения (не для физики).
-	if f.smoothMinR == 0 {
-		f.smoothMinR = minR
-	} else {
-		diff := minR - f.smoothMinR
-		if diff > 1.0 || diff < -1.0 {
-			f.smoothMinR = minR
-		} else {
-			f.smoothMinR += diff * 0.1
-		}
-	}
+	// Производные для рендера — точные, БЕЗ накопления ошибки.
+	f.Pos = rl.Vector3Add(f.EarthPos, rel)
+	f.Vel = rl.Vector3Add(f.EarthVel, relVel)
 
 	f.parallelTransport(oldPos, f.Pos)
 	f.TangentForward = f.projectToTangent(f.TangentForward)
