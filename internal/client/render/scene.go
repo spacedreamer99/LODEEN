@@ -22,6 +22,8 @@ type Scene struct {
 
 	planetPos   rl.Vector3
 	planetScale float32
+	sunTex      rl.Texture2D
+	earthPos    rl.Vector3
 }
 
 func NewScene(planetPath string) *Scene {
@@ -55,10 +57,15 @@ func NewScene(planetPath string) *Scene {
 	waterMesh := rl.GenMeshSphere(protocol.SeaLevel, 64, 64)
 	s.water = rl.LoadModelFromMesh(waterMesh)
 
+	s.sunTex = genSunTexture()
+
 	return s
 }
 
 func (s *Scene) Unload() {
+	if s.sunTex.ID != 0 {
+		rl.UnloadTexture(s.sunTex)
+	}
 	if s.hasPlanet {
 		rl.UnloadModel(s.planet)
 	}
@@ -66,6 +73,10 @@ func (s *Scene) Unload() {
 }
 
 func (s *Scene) HasPlanet() bool { return s.hasPlanet }
+
+func (s *Scene) SetEarthPos(p protocol.Vector3) {
+	s.earthPos = rl.NewVector3(p.X, p.Y, p.Z)
+}
 
 func (s *Scene) SetPlanetScale(scale float32) { s.planetScale = scale }
 
@@ -455,8 +466,38 @@ func DrawRockets(rockets []protocol.Rocket) {
 		rl.DrawCylinderEx(base, nozzleBase, 0.6, 0.9, 8,
 			rl.NewColor(60, 60, 70, 255))
 
-
 	}
+}
+
+// genSunTexture — процедурная текстура солнца (radial gradient с alpha).
+func genSunTexture() rl.Texture2D {
+	const size = 256
+	img := rl.GenImageColor(size, size, rl.Blank)
+	cx := float32(size) / 2
+	cy := float32(size) / 2
+
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			dx := float32(x) - cx
+			dy := float32(y) - cy
+			d := float32(math.Sqrt(float64(dx*dx+dy*dy))) / cx
+			if d > 1.0 {
+				continue
+			}
+			// Плавное затухание: (1-d)^2
+			f := 1.0 - float64(d)
+			a := uint8(255 * f * f)
+			// Цвет: бело-жёлтый центр, оранжевый край.
+			r := uint8(255)
+			g := uint8(240 - 60*d)
+			b := uint8(200 - 150*d)
+			rl.ImageDrawPixel(img, int32(x), int32(y), rl.NewColor(r, g, b, a))
+		}
+	}
+
+	tex := rl.LoadTextureFromImage(img)
+	rl.UnloadImage(img)
+	return tex
 }
 
 func DrawWells(wells []protocol.Well) {
@@ -498,5 +539,63 @@ func DrawMammoths(mammoths []protocol.Mammoth) {
 				rl.NewColor(90, 60, 40, 255))
 			rl.DrawCubeWires(saddlePos, size*0.5, size*0.3, size*0.5, rl.Black)
 		}
+	}
+}
+
+func min32(a, b float32) float32 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// DrawSun3D — Солнце как 3D-сфера. Для далёких расстояний подтягивает
+// позицию к камере (обходит far plane raylib), сохраняя угловой размер.
+func (s *Scene) DrawSun3D(cam rl.Camera3D) {
+	sunPos := rl.NewVector3(protocol.SunPos.X, protocol.SunPos.Y, protocol.SunPos.Z)
+
+	// Проверка «перед камерой».
+	fwdX := cam.Target.X - cam.Position.X
+	fwdY := cam.Target.Y - cam.Position.Y
+	fwdZ := cam.Target.Z - cam.Position.Z
+	toX := sunPos.X - cam.Position.X
+	toY := sunPos.Y - cam.Position.Y
+	toZ := sunPos.Z - cam.Position.Z
+	if fwdX*toX+fwdY*toY+fwdZ*toZ <= 0 {
+		return
+	}
+
+	dirX := sunPos.X - cam.Position.X
+	dirY := sunPos.Y - cam.Position.Y
+	dirZ := sunPos.Z - cam.Position.Z
+	dist := float32(math.Sqrt(float64(dirX*dirX + dirY*dirY + dirZ*dirZ)))
+	if dist < 0.01 {
+		return
+	}
+
+	const maxDist = 850.0
+	var drawPos rl.Vector3
+	var drawRadius float32
+
+	if dist <= maxDist {
+		drawPos = sunPos
+		drawRadius = protocol.SunRadius
+	} else {
+		k := maxDist / dist
+		drawPos = rl.NewVector3(
+			cam.Position.X+dirX*k,
+			cam.Position.Y+dirY*k,
+			cam.Position.Z+dirZ*k,
+		)
+		drawRadius = protocol.SunRadius * k
+	}
+
+	// Ядро.
+	rl.DrawSphere(drawPos, drawRadius, rl.NewColor(255, 220, 80, 255))
+	// Лёгкие wireframe для объёма.
+	rl.DrawSphereWires(drawPos, drawRadius, 24, 24, rl.NewColor(255, 160, 40, 160))
+	// Внешнее свечение (тонкая оболочка).
+	if drawRadius < maxDist*0.9 {
+		rl.DrawSphereWires(drawPos, drawRadius*1.12, 16, 16, rl.NewColor(255, 200, 100, 70))
 	}
 }

@@ -125,26 +125,29 @@ func (s *Server) broadcastSnapshot() {
 	rockets := make([]protocol.Rocket, 0, len(s.rockets))
 	for _, r := range s.rockets {
 		rockets = append(rockets, protocol.Rocket{
-			ID:        r.ID,
-			X:         r.Pos.X,
-			Y:         r.Pos.Y,
-			Z:         r.Pos.Z,
-			DX:        r.Up.X,
-			DY:        r.Up.Y,
-			DZ:        r.Up.Z,
-			Fuel:      r.Fuel,
-			MaxFuel:   r.MaxFuel,
-			Piloted:   r.Piloted,
-			OwnerID:   r.OwnerID,
-			InOrbit:   r.InOrbit,
-			Apoapsis:  r.Apoapsis,
-			Periapsis: r.Periapsis,
+			ID:             r.ID,
+			X:              r.Pos.X,
+			Y:              r.Pos.Y,
+			Z:              r.Pos.Z,
+			DX:             r.Up.X,
+			DY:             r.Up.Y,
+			DZ:             r.Up.Z,
+			Fuel:           r.Fuel,
+			MaxFuel:        r.MaxFuel,
+			Piloted:        r.Piloted,
+			OwnerID:        r.OwnerID,
+			InOrbit:        r.InOrbit,
+			Apoapsis:       r.Apoapsis,
+			Periapsis:      r.Periapsis,
 			Speed:          r.Speed,
 			Altitude:       r.Altitude,
 			TargetVelocity: r.TargetVelocity,
 			VX:             r.Vel.X,
 			VY:             r.Vel.Y,
 			VZ:             r.Vel.Z,
+			PrimaryBody:    r.PrimaryBody,
+			DistSun:        r.DistSun,
+			SOIRadius:      r.SOIRadius,
 		})
 	}
 	s.rocketsMu.RUnlock()
@@ -169,6 +172,9 @@ func (s *Server) broadcastSnapshot() {
 	}
 	s.mammothsMu.RUnlock()
 
+	earthPos := s.world.EarthPos
+	earthVel := s.world.EarthVel
+
 	env, err := protocol.NewEnvelope(protocol.TypeSnapshot, protocol.Snapshot{
 		Tick:        s.tick,
 		Players:     players,
@@ -183,6 +189,8 @@ func (s *Server) broadcastSnapshot() {
 		Batteries:   batteries,
 		Factories:   factories,
 		Rockets:     rockets,
+		EarthPos:    earthPos,
+		EarthVel:    earthVel,
 	})
 	if err != nil {
 		return
@@ -198,4 +206,3 @@ func (s *Server) broadcastSnapshot() {
 		c.enqueue(raw)
 	}
 }
-

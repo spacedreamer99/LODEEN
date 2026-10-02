@@ -2,9 +2,8 @@
 package net
 
 import (
-	"crypto/rand"
-	"time"
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -12,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -30,7 +30,6 @@ type Metrics struct {
 	TicksTotal       prometheus.Counter
 	ChatMessages     prometheus.Counter
 }
-
 
 type Server struct {
 	addr     string
@@ -76,7 +75,8 @@ type Server struct {
 	projMu      sync.RWMutex
 	projectiles map[string]*Projectile
 
-	tick uint64
+	tick  uint64
+	world *WorldState
 
 	wg        sync.WaitGroup
 	closeOnce sync.Once
@@ -109,6 +109,7 @@ func New(addr string, tickRate int, log *slog.Logger, m *Metrics) *Server {
 	s.mobs = make(map[string]*Mob)
 	s.spawnMobs(5)
 	s.projectiles = make(map[string]*Projectile)
+	s.world = NewWorldState()
 	return s
 }
 
@@ -317,6 +318,7 @@ func (s *Server) tickLoop() {
 			s.tickBreeding()
 			s.tickResources()
 			s.tickEnergy(float32(1.0 / float64(s.tickRate)))
+			s.world.Tick(float32(1.0 / float64(s.tickRate)))
 			s.tickRockets(float32(1.0 / float64(s.tickRate)))
 			s.broadcastSnapshot()
 		case <-s.done:

@@ -55,7 +55,6 @@ func (s *Server) handleCraft(c *Client, recipe string) {
 	c.log.Info("crafted", "recipe", recipe)
 }
 
-
 func (s *Server) handleMessage(c *Client, env *protocol.Envelope) {
 	switch env.Type {
 	case protocol.TypeState:
@@ -101,23 +100,6 @@ func (s *Server) handleMessage(c *Client, env *protocol.Envelope) {
 			c.mu.Unlock()
 			c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
 			c.log.Info("cheat: allinv", "count", len(allItems))
-			break
-		}
-		// Чит-команда /infuel — бесконечное топливо (toggle).
-		if cm.Text == "/infuel" {
-			c.mu.Lock()
-			c.infiniteFuel = !c.infiniteFuel
-			state := c.infiniteFuel
-			c.mu.Unlock()
-
-			msg := "infinite fuel: OFF"
-			if state {
-				msg = "infinite fuel: ON"
-			}
-			c.sendEnvelope(protocol.TypeChat, protocol.ChatMessage{
-				From: "server", Text: msg, TS: time.Now().UnixMilli(),
-			})
-			c.log.Info("cheat: infuel", "state", state)
 			break
 		}
 		// Чит-команда /infuel — бесконечное топливо (toggle).
@@ -364,7 +346,6 @@ func (s *Server) handleMessage(c *Client, env *protocol.Envelope) {
 	}
 }
 
-
 func (s *Server) handlePickup(c *Client, resourceID string) {
 	ps := c.State()
 
@@ -388,4 +369,3 @@ func (s *Server) handlePickup(c *Client, resourceID string) {
 	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
 	c.log.Info("item picked up", "item", r.Type)
 }
-

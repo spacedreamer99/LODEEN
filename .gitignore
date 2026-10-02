@@ -16,3 +16,9 @@ res/*.png~
 *.bak_before_split
 *.bak_before_energy
 *.bak_*
+
+# Бинарники сборки в корне
+/client
+/server
+/lodeen-client
+/lodeen-server

@@ -33,6 +33,15 @@ type FlightController struct {
 	InBoat      bool
 
 	Mode Mode
+
+	// Bodies — для гравитации и «верха». Устанавливаются app.go каждый кадр.
+	// Pos живёт в helio (мировой фрейм). EarthPos — текущая позиция Земли.
+	EarthPos  rl.Vector3
+	SunPos    rl.Vector3
+	EarthVel  rl.Vector3
+	HelioInit bool
+
+	AttachedBody string
 }
 
 func New(pos rl.Vector3) *FlightController {
@@ -67,6 +76,18 @@ func (f *FlightController) UpdateLookOnly(dt float32, mouseDelta rl.Vector2) {
 }
 
 func (f *FlightController) Update(dt float32, mouseDelta rl.Vector2) {
+	// R (только в креативе) — цикл привязки к телу.
+	if f.Mode == ModeCreative && rl.IsKeyPressed(rl.KeyR) {
+		switch f.AttachedBody {
+		case "":
+			f.AttachedBody = "earth"
+		case "earth":
+			f.AttachedBody = "sun"
+		default:
+			f.AttachedBody = ""
+		}
+	}
+
 	if f.Mode == ModeSurvival {
 		f.updateSurvivalLook(mouseDelta)
 		f.updateSurvival(dt)
@@ -114,11 +135,12 @@ func (f *FlightController) updateSurvivalLook(mouseDelta rl.Vector2) {
 }
 
 func (f *FlightController) survivalUp() rl.Vector3 {
-	d := rl.Vector3Length(f.Pos)
+	rel := rl.Vector3Subtract(f.Pos, f.EarthPos)
+	d := rl.Vector3Length(rel)
 	if d < 0.01 {
 		d = 0.01
 	}
-	return rl.Vector3Scale(f.Pos, 1/d)
+	return rl.Vector3Scale(rel, 1/d)
 }
 
 func (f *FlightController) projectToTangent(v rl.Vector3) rl.Vector3 {
@@ -139,8 +161,10 @@ func (f *FlightController) projectToTangent(v rl.Vector3) rl.Vector3 {
 }
 
 func (f *FlightController) parallelTransport(oldPos, newPos rl.Vector3) {
-	oldUp := rl.Vector3Normalize(oldPos)
-	newUp := rl.Vector3Normalize(newPos)
+	oldRel := rl.Vector3Subtract(oldPos, f.EarthPos)
+	newRel := rl.Vector3Subtract(newPos, f.EarthPos)
+	oldUp := rl.Vector3Normalize(oldRel)
+	newUp := rl.Vector3Normalize(newRel)
 	if rl.Vector3Distance(oldUp, newUp) < 0.0001 {
 		return
 	}
@@ -156,7 +180,8 @@ func (f *FlightController) updateSurvival(dt float32) {
 		groundEps = 0.5
 	)
 	oldPos := f.Pos
-	dir := rl.Vector3Normalize(f.Pos)
+	rel := rl.Vector3Subtract(f.Pos, f.EarthPos)
+	dir := rl.Vector3Normalize(rel)
 	th := protocol.TerrainHeight(dir.X, dir.Y, dir.Z)
 	overWater := th < protocol.SeaLevel // над водой или на воде
 	swimming := overWater && !f.InBoat  // пешком в воде
@@ -180,11 +205,11 @@ func (f *FlightController) updateSurvival(dt float32) {
 	surfaceR := protocol.SurfaceRadius(protocol.Vector3{X: dir.X, Y: dir.Y, Z: dir.Z})
 	minR := surfaceR + protocol.PlayerHeight
 
-	dist := rl.Vector3Length(f.Pos)
+	dist := rl.Vector3Length(rel)
 	if dist < 0.01 {
 		dist = 0.01
 	}
-	up := rl.Vector3Scale(f.Pos, 1/dist)
+	up := rl.Vector3Scale(rel, 1/dist)
 
 	f.Vel = rl.Vector3Subtract(f.Vel, rl.Vector3Scale(up, gravity*dt))
 	onGround := dist <= minR+groundEps
@@ -226,10 +251,13 @@ func (f *FlightController) updateSurvival(dt float32) {
 
 	f.Pos = rl.Vector3Add(f.Pos, rl.Vector3Scale(f.Vel, dt))
 
-	dist = rl.Vector3Length(f.Pos)
-	if dist < minR {
-		f.Pos = rl.Vector3Scale(f.Pos, minR/dist)
-		nr := rl.Vector3Scale(f.Pos, 1/minR)
+	relAfter := rl.Vector3Subtract(f.Pos, f.EarthPos)
+	distAfter := rl.Vector3Length(relAfter)
+	if distAfter < minR {
+		scale := minR / distAfter
+		relAfter = rl.Vector3Scale(relAfter, scale)
+		f.Pos = rl.Vector3Add(f.EarthPos, relAfter)
+		nr := rl.Vector3Normalize(relAfter)
 		vr := rl.Vector3DotProduct(f.Vel, nr)
 		if vr < 0 {
 			f.Vel = rl.Vector3Subtract(f.Vel, rl.Vector3Scale(nr, vr))
@@ -272,6 +300,11 @@ func (f *FlightController) updateCreativeLook(mouseDelta rl.Vector2, dt float32)
 }
 
 func (f *FlightController) updateCreative(dt float32) {
+	// Если привязан к Земле — компенсируем её движение.
+	if f.AttachedBody == "earth" {
+		f.Pos = rl.Vector3Add(f.Pos, rl.Vector3Scale(f.EarthVel, dt))
+	}
+
 	fw := f.creativeForward()
 	rt := f.creativeRight()
 	up := f.creativeUp()
