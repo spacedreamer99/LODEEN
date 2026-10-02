@@ -111,6 +111,27 @@ type App struct {
 
 	earthPos protocol.Vector3
 	earthVel protocol.Vector3
+
+	showDebug bool
+
+	earthPosSmooth protocol.Vector3
+	earthPosInit   bool
+
+	pausedRelPos protocol.Vector3
+	pausedRelVel protocol.Vector3
+
+	earthHistory    []earthSnap
+	lastServerEP    protocol.Vector3
+	unfocusFreeze   bool
+	unfocusRelPos   protocol.Vector3
+	unfocusRelVel   protocol.Vector3
+	camSmoothPos    rl.Vector3
+	camSmoothTarget rl.Vector3
+	camSmoothInit   bool
+	renderTick      float64
+	renderTickInit  bool
+	tickRate        float64
+	diagFrames      int
 }
 
 func New(cfg *config.Config, log *slog.Logger) *App {
@@ -128,7 +149,7 @@ func (a *App) Run() error {
 	rl.SetConfigFlags(rl.FlagVsyncHint | rl.FlagWindowResizable)
 	rl.InitWindow(screenW, screenH, "LODEEN")
 	defer rl.CloseWindow()
-	rl.SetTargetFPS(60)
+	rl.SetTargetFPS(0)
 	rl.SetExitKey(rl.KeyNull)
 
 	a.resizeUITarget()
@@ -158,8 +179,30 @@ func (a *App) Run() error {
 		Projection: rl.CameraPerspective,
 	}
 
+	frameTimes := make([]float32, 0, 60)
 	for !rl.WindowShouldClose() && !a.quit {
 		dt := rl.GetFrameTime()
+		frameTimes = append(frameTimes, dt)
+		if len(frameTimes) >= 60 {
+			var mn, mx, sum float32
+			mn = frameTimes[0]
+			for _, t := range frameTimes {
+				if t < mn {
+					mn = t
+				}
+				if t > mx {
+					mx = t
+				}
+				sum += t
+			}
+			avg := sum / 60
+			a.log.Info("frame stats",
+				"min", fmt.Sprintf("%.4f", mn),
+				"max", fmt.Sprintf("%.4f", mx),
+				"avg", fmt.Sprintf("%.4f", avg),
+				"jitter", fmt.Sprintf("%.4f", mx-mn))
+			frameTimes = frameTimes[:0]
+		}
 		a.update(dt)
 		a.draw()
 	}
@@ -185,9 +228,158 @@ func (a *App) setCursorCaptured(c bool) {
 }
 
 func (a *App) update(dt float32) {
+	// Синк тел: буферизация по ТИКАМ сервера (не по времени прибытия).
+	// Устраняет джиттер снапшотов при рендере.
+	serverEP := a.nc.EarthPos()
+	serverEV := a.nc.EarthVel()
+	serverTick := a.nc.LastSnapshotTick()
+
+	if a.tickRate == 0 {
+		a.tickRate = 20.0
+	}
+
+	// Записываем снапшот только при новом тике.
+	if serverTick > 0 {
+		shouldPush := len(a.earthHistory) == 0 ||
+			serverTick != a.earthHistory[len(a.earthHistory)-1].tick
+		if shouldPush {
+			a.earthHistory = append(a.earthHistory, earthSnap{
+				tick: serverTick,
+				pos:  serverEP,
+				vel:  serverEV,
+				at:   time.Now(),
+			})
+			if len(a.earthHistory) > 30 {
+				a.earthHistory = a.earthHistory[len(a.earthHistory)-30:]
+			}
+		}
+	}
+
+	// Инициализация renderTick — 3 тика назад от последнего.
+	if !a.renderTickInit && len(a.earthHistory) > 0 {
+		a.renderTick = float64(a.earthHistory[len(a.earthHistory)-1].tick) - 3.0
+		a.renderTickInit = true
+	}
+
+	// Продвигаем renderTick на dt * tickRate.
+	if a.renderTickInit {
+		a.renderTick += float64(dt) * a.tickRate
+	}
+
+	// Клэмп в границах буфера.
+	if len(a.earthHistory) >= 2 {
+		oldest := float64(a.earthHistory[0].tick)
+		newest := float64(a.earthHistory[len(a.earthHistory)-1].tick)
+		minRT := oldest
+		maxRT := newest - 1.0
+		if a.renderTick < minRT {
+			a.renderTick = minRT
+		}
+		if a.renderTick > maxRT {
+			a.renderTick = maxRT
+		}
+	}
+
+	// Интерполяция по тикам.
+	var renderEP, renderEV protocol.Vector3
+	if len(a.earthHistory) >= 2 {
+		var s1, s2 *earthSnap
+		for i := range a.earthHistory {
+			if float64(a.earthHistory[i].tick) <= a.renderTick {
+				s1 = &a.earthHistory[i]
+				if i+1 < len(a.earthHistory) {
+					s2 = &a.earthHistory[i+1]
+				}
+			}
+		}
+		if s1 == nil {
+			s1 = &a.earthHistory[0]
+			if len(a.earthHistory) > 1 {
+				s2 = &a.earthHistory[1]
+			}
+		}
+		if s2 == nil {
+			renderEP = s1.pos
+			renderEV = s1.vel
+		} else {
+			span := float64(s2.tick - s1.tick)
+			t := 0.0
+			if span > 0 {
+				t = (a.renderTick - float64(s1.tick)) / span
+			}
+			if t < 0 {
+				t = 0
+			} else if t > 1 {
+				t = 1
+			}
+			ft := float32(t)
+			renderEP = protocol.Vector3{
+				X: s1.pos.X + (s2.pos.X-s1.pos.X)*ft,
+				Y: s1.pos.Y + (s2.pos.Y-s1.pos.Y)*ft,
+				Z: s1.pos.Z + (s2.pos.Z-s1.pos.Z)*ft,
+			}
+			renderEV = protocol.Vector3{
+				X: s1.vel.X + (s2.vel.X-s1.vel.X)*ft,
+				Y: s1.vel.Y + (s2.vel.Y-s1.vel.Y)*ft,
+				Z: s1.vel.Z + (s2.vel.Z-s1.vel.Z)*ft,
+			}
+		}
+	} else if len(a.earthHistory) == 1 {
+		renderEP = a.earthHistory[0].pos
+		renderEV = a.earthHistory[0].vel
+	} else {
+		renderEP = serverEP
+		renderEV = serverEV
+	}
+	a.earthPos = renderEP
+	a.earthVel = renderEV
+	a.scene.SetEarthPos(a.earthPos)
+
+	// Frame spike detection.
+	if dt > 0.05 {
+		a.log.Warn("frame spike", "dt", fmt.Sprintf("%.4f", dt))
+	}
+
+	if rl.IsKeyPressed(rl.KeyF3) {
+		a.showDebug = !a.showDebug
+	}
+	if rl.IsKeyPressed(rl.KeyF8) {
+		a.diagFrames = 120 // 2 секунды @ 60 FPS
+		a.log.Info("DIAG START")
+	}
 	a.drainChat()
 
 	a.updateProjectiles()
+
+	// На паузе игрок жёстко привязан к Земле по relative-координатам.
+	if a.mode == state.ModePaused && a.flight != nil && a.flight.HelioInit {
+		a.flight.Pos = rl.NewVector3(
+			a.earthPos.X+a.pausedRelPos.X,
+			a.earthPos.Y+a.pausedRelPos.Y,
+			a.earthPos.Z+a.pausedRelPos.Z,
+		)
+		a.flight.Vel = rl.NewVector3(
+			a.earthVel.X+a.pausedRelVel.X,
+			a.earthVel.Y+a.pausedRelVel.Y,
+			a.earthVel.Z+a.pausedRelVel.Z,
+		)
+		// Камера тоже едет с Землёй — иначе при выходе из паузы скачок.
+		fw := a.flight.Forward()
+		a.camera.Position = a.flight.Pos
+		a.camera.Target = rl.Vector3Add(a.flight.Pos, rl.Vector3Scale(fw, 100.0))
+		a.camera.Up = a.flight.CameraUp()
+
+		// Раз в секунду — что реально применяем.
+		if time.Since(a.lastLogAt) > time.Second {
+			a.log.Info("PAUSE TICK",
+				"flightPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.flight.Pos.X, a.flight.Pos.Y, a.flight.Pos.Z),
+				"earth", fmt.Sprintf("%.2f,%.2f,%.2f", a.earthPos.X, a.earthPos.Y, a.earthPos.Z),
+				"relDist", fmt.Sprintf("%.3f", math.Sqrt(float64(
+					(a.flight.Pos.X-a.earthPos.X)*(a.flight.Pos.X-a.earthPos.X)+
+						(a.flight.Pos.Y-a.earthPos.Y)*(a.flight.Pos.Y-a.earthPos.Y)+
+						(a.flight.Pos.Z-a.earthPos.Z)*(a.flight.Pos.Z-a.earthPos.Z)))))
+		}
+	}
 
 	switch a.mode {
 	case state.ModeMenu:
@@ -198,6 +390,25 @@ func (a *App) update(dt float32) {
 		a.updatePaused()
 	case state.ModeDead:
 		a.updateDead()
+	}
+
+	// Диагностика — пишем каждый кадр 2 секунды.
+	if a.diagFrames > 0 && a.flight != nil {
+		a.diagFrames--
+		rel := rl.Vector3Subtract(a.flight.Pos, a.earthPosAsRl())
+		a.log.Info("DIAG",
+			"flightPos", fmt.Sprintf("%.4f,%.4f,%.4f", a.flight.Pos.X, a.flight.Pos.Y, a.flight.Pos.Z),
+			"camPos", fmt.Sprintf("%.4f,%.4f,%.4f", a.camSmoothPos.X, a.camSmoothPos.Y, a.camSmoothPos.Z),
+			"earthPos", fmt.Sprintf("%.4f,%.4f,%.4f", a.earthPos.X, a.earthPos.Y, a.earthPos.Z),
+			"earthVel", fmt.Sprintf("%.5f,%.5f,%.5f", a.earthVel.X, a.earthVel.Y, a.earthVel.Z),
+			"rel", fmt.Sprintf("%.4f,%.4f,%.4f", rel.X, rel.Y, rel.Z),
+			"relLen", fmt.Sprintf("%.4f", rl.Vector3Length(rel)),
+			"vel", fmt.Sprintf("%.4f,%.4f,%.4f", a.flight.Vel.X, a.flight.Vel.Y, a.flight.Vel.Z),
+			"renderTick", fmt.Sprintf("%.4f", a.renderTick),
+			"dt", fmt.Sprintf("%.5f", dt))
+		if a.diagFrames == 0 {
+			a.log.Info("DIAG END")
+		}
 	}
 }
 
@@ -525,13 +736,70 @@ func (a *App) updatePlaying(dt float32) {
 		return
 	}
 	if rl.IsKeyPressed(rl.KeyEscape) {
+		// Сохраняем относительную позицию к Земле.
+		if a.flight != nil && a.flight.HelioInit {
+			a.pausedRelPos = protocol.Vector3{
+				X: a.flight.Pos.X - a.earthPos.X,
+				Y: a.flight.Pos.Y - a.earthPos.Y,
+				Z: a.flight.Pos.Z - a.earthPos.Z,
+			}
+			a.pausedRelVel = protocol.Vector3{
+				X: a.flight.Vel.X - a.earthVel.X,
+				Y: a.flight.Vel.Y - a.earthVel.Y,
+				Z: a.flight.Vel.Z - a.earthVel.Z,
+			}
+			a.log.Info("PAUSE ENTERED",
+				"helio", fmt.Sprintf("%.2f,%.2f,%.2f", a.flight.Pos.X, a.flight.Pos.Y, a.flight.Pos.Z),
+				"earth", fmt.Sprintf("%.2f,%.2f,%.2f", a.earthPos.X, a.earthPos.Y, a.earthPos.Z),
+				"relPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.pausedRelPos.X, a.pausedRelPos.Y, a.pausedRelPos.Z),
+				"relVel", fmt.Sprintf("%.3f,%.3f,%.3f", a.pausedRelVel.X, a.pausedRelVel.Y, a.pausedRelVel.Z))
+		}
 		a.mode = state.ModePaused
 		return
 	}
 
 	if !rl.IsWindowFocused() {
 		a.setCursorCaptured(false)
+		// Alt+Tab = заморозка относительно Земли (как пауза).
+		if a.flight != nil && a.flight.HelioInit {
+			if !a.unfocusFreeze {
+				a.unfocusRelPos = protocol.Vector3{
+					X: a.flight.Pos.X - a.earthPos.X,
+					Y: a.flight.Pos.Y - a.earthPos.Y,
+					Z: a.flight.Pos.Z - a.earthPos.Z,
+				}
+				a.unfocusRelVel = protocol.Vector3{
+					X: a.flight.Vel.X - a.earthVel.X,
+					Y: a.flight.Vel.Y - a.earthVel.Y,
+					Z: a.flight.Vel.Z - a.earthVel.Z,
+				}
+				a.unfocusFreeze = true
+				a.log.Info("UNFOCUS freeze",
+					"relPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.unfocusRelPos.X, a.unfocusRelPos.Y, a.unfocusRelPos.Z))
+			}
+			a.flight.Pos = rl.NewVector3(
+				a.earthPos.X+a.unfocusRelPos.X,
+				a.earthPos.Y+a.unfocusRelPos.Y,
+				a.earthPos.Z+a.unfocusRelPos.Z,
+			)
+			a.flight.Vel = rl.NewVector3(
+				a.earthVel.X+a.unfocusRelVel.X,
+				a.earthVel.Y+a.unfocusRelVel.Y,
+				a.earthVel.Z+a.unfocusRelVel.Z,
+			)
+			fw := a.flight.Forward()
+			a.camera.Position = a.flight.Pos
+			a.camera.Target = rl.Vector3Add(a.flight.Pos, rl.Vector3Scale(fw, 100.0))
+			a.camera.Up = a.flight.CameraUp()
+		}
 		return
+	}
+
+	if a.unfocusFreeze {
+		a.unfocusFreeze = false
+		a.log.Info("UNFOCUS restored",
+			"helio", fmt.Sprintf("%.2f,%.2f,%.2f", a.flight.Pos.X, a.flight.Pos.Y, a.flight.Pos.Z),
+			"earth", fmt.Sprintf("%.2f,%.2f,%.2f", a.earthPos.X, a.earthPos.Y, a.earthPos.Z))
 	}
 
 	a.setCursorCaptured(true)
@@ -545,11 +813,16 @@ func (a *App) updatePlaying(dt float32) {
 	a.flight.SunPos = rl.NewVector3(protocol.SunPos.X, protocol.SunPos.Y, protocol.SunPos.Z)
 	a.flight.EarthVel = rl.NewVector3(a.earthVel.X, a.earthVel.Y, a.earthVel.Z)
 
-	// При первой EarthPos — переносим flight.Pos в helio.
-	if !a.flight.HelioInit && (a.earthPos.X != 0 || a.earthPos.Y != 0 || a.earthPos.Z != 0) {
+	// HelioInit — только когда EarthPos реально пришла и не (0,0,0).
+	// Проверяем по длине вектора: |earthPos| > 100 (Земля точно не в центре).
+	epLen := a.earthPos.X*a.earthPos.X + a.earthPos.Y*a.earthPos.Y + a.earthPos.Z*a.earthPos.Z
+	if !a.flight.HelioInit && epLen > 100*100 {
 		a.flight.Pos = rl.Vector3Add(a.flight.Pos, a.flight.EarthPos)
 		a.flight.HelioInit = true
-		a.log.Info("flight helio init", "pos", a.flight.Pos)
+		a.log.Info("flight helio init",
+			"spawnGeo", fmt.Sprintf("%.2f,%.2f,%.2f", a.flight.Pos.X-a.flight.EarthPos.X, a.flight.Pos.Y-a.flight.EarthPos.Y, a.flight.Pos.Z-a.flight.EarthPos.Z),
+			"earth", fmt.Sprintf("%.2f,%.2f,%.2f", a.flight.EarthPos.X, a.flight.EarthPos.Y, a.flight.EarthPos.Z),
+			"helio", fmt.Sprintf("%.2f,%.2f,%.2f", a.flight.Pos.X, a.flight.Pos.Y, a.flight.Pos.Z))
 	}
 
 	md := rl.GetMouseDelta()
@@ -567,41 +840,28 @@ func (a *App) updatePlaying(dt float32) {
 		if keys != a.lastKeys {
 			edgeKeys = keys
 		}
-		edgeMouse := ""
-		if mouse != a.lastMouse {
-			edgeMouse = mouse
-		}
 
-		fw := a.flight.Forward()
-		rt := a.flight.Right()
-		up := a.flight.Up()
-		q := a.flight.Quat
+		// Полное состояние для отладки дёргания.
+		relX := a.flight.Pos.X - a.earthPos.X
+		relY := a.flight.Pos.Y - a.earthPos.Y
+		relZ := a.flight.Pos.Z - a.earthPos.Z
+		relDist := float32(math.Sqrt(float64(relX*relX + relY*relY + relZ*relZ)))
+		surfaceR := protocol.SurfaceRadius(protocol.Vector3{X: relX, Y: relY, Z: relZ})
+		minR := surfaceR + protocol.PlayerHeight
+		onGround := relDist <= minR+0.5
 
-		dtSec := now.Sub(a.lastLogAt).Seconds()
-		vel := "0.0,0.0,0.0"
-		if dtSec > 0 {
-			vx := (a.flight.Pos.X - a.lastPos.X) / float32(dtSec)
-			vy := (a.flight.Pos.Y - a.lastPos.Y) / float32(dtSec)
-			vz := (a.flight.Pos.Z - a.lastPos.Z) / float32(dtSec)
-			vel = fmt.Sprintf("%.1f,%.1f,%.1f", vx, vy, vz)
-		}
-
-		a.log.Info("6dof",
-			"dmdx", fmt.Sprintf("%+.1f", md.X),
-			"dmdy", fmt.Sprintf("%+.1f", md.Y),
+		a.log.Info("state",
+			"dt", fmt.Sprintf("%.4f", dt),
+			"helioPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.flight.Pos.X, a.flight.Pos.Y, a.flight.Pos.Z),
+			"earthPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.earthPos.X, a.earthPos.Y, a.earthPos.Z),
+			"earthVel", fmt.Sprintf("%.3f,%.3f,%.3f", a.earthVel.X, a.earthVel.Y, a.earthVel.Z),
+			"relDist", fmt.Sprintf("%.3f", relDist),
+			"minR", fmt.Sprintf("%.3f", minR),
+			"onGround", onGround,
+			"vel", fmt.Sprintf("%.2f,%.2f,%.2f", a.flight.Vel.X, a.flight.Vel.Y, a.flight.Vel.Z),
+			"velLen", fmt.Sprintf("%.2f", rl.Vector3Length(a.flight.Vel)),
 			"edgeK", edgeKeys,
-			"edgeM", edgeMouse,
 			"keys", keys,
-			"mouse", mouse,
-			"pos", fmt.Sprintf("%.2f,%.2f,%.2f", a.flight.Pos.X, a.flight.Pos.Y, a.flight.Pos.Z),
-			"vel", vel,
-			"fwd", fmt.Sprintf("%.2f,%.2f,%.2f", fw.X, fw.Y, fw.Z),
-			"rgt", fmt.Sprintf("%.2f,%.2f,%.2f", rt.X, rt.Y, rt.Z),
-			"up", fmt.Sprintf("%.2f,%.2f,%.2f", up.X, up.Y, up.Z),
-			"quat", fmt.Sprintf("%.3f,%.3f,%.3f,%.3f", q.X, q.Y, q.Z, q.W),
-			"cam.pos", fmt.Sprintf("%.2f,%.2f,%.2f", a.camera.Position.X, a.camera.Position.Y, a.camera.Position.Z),
-			"cam.tgt", fmt.Sprintf("%.2f,%.2f,%.2f", a.camera.Target.X, a.camera.Target.Y, a.camera.Target.Z),
-			"cam.up", fmt.Sprintf("%.2f,%.2f,%.2f", a.camera.Up.X, a.camera.Up.Y, a.camera.Up.Z),
 		)
 
 		a.lastLogAt = now
@@ -610,8 +870,22 @@ func (a *App) updatePlaying(dt float32) {
 		a.lastMouse = mouse
 	}
 	fw := a.flight.Forward()
-	a.camera.Position = a.flight.Pos
-	a.camera.Target = rl.Vector3Add(a.flight.Pos, rl.Vector3Scale(fw, 100.0))
+	targetNew := rl.Vector3Add(a.flight.Pos, rl.Vector3Scale(fw, 100.0))
+
+	// Сглаживание камеры — убирает мелкое визуальное дрожание.
+	if !a.camSmoothInit {
+		a.camSmoothPos = a.flight.Pos
+		a.camSmoothTarget = targetNew
+		a.camSmoothInit = true
+	} else {
+		const camAlpha = float32(0.5)
+		a.camSmoothPos = rl.Vector3Add(a.camSmoothPos,
+			rl.Vector3Scale(rl.Vector3Subtract(a.flight.Pos, a.camSmoothPos), camAlpha))
+		a.camSmoothTarget = rl.Vector3Add(a.camSmoothTarget,
+			rl.Vector3Scale(rl.Vector3Subtract(targetNew, a.camSmoothTarget), camAlpha))
+	}
+	a.camera.Position = a.camSmoothPos
+	a.camera.Target = a.camSmoothTarget
 	a.camera.Up = a.flight.CameraUp()
 
 	yawF := float32(math.Atan2(float64(-fw.X), float64(-fw.Z)))
@@ -632,14 +906,31 @@ func (a *App) updatePaused() {
 		a.tryPickup()
 	}
 	if rl.IsKeyPressed(rl.KeyEscape) {
+		// Возвращаем velocity из сохранённой relative.
+		if a.flight != nil && a.flight.HelioInit {
+			a.flight.Vel = rl.NewVector3(
+				a.earthVel.X+a.pausedRelVel.X,
+				a.earthVel.Y+a.pausedRelVel.Y,
+				a.earthVel.Z+a.pausedRelVel.Z,
+			)
+			a.log.Info("PAUSE EXITED",
+				"earth", fmt.Sprintf("%.2f,%.2f,%.2f", a.earthPos.X, a.earthPos.Y, a.earthPos.Z),
+				"flightPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.flight.Pos.X, a.flight.Pos.Y, a.flight.Pos.Z),
+				"expectedPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.earthPos.X+a.pausedRelPos.X, a.earthPos.Y+a.pausedRelPos.Y, a.earthPos.Z+a.pausedRelPos.Z),
+				"flightVel", fmt.Sprintf("%.3f,%.3f,%.3f", a.flight.Vel.X, a.flight.Vel.Y, a.flight.Vel.Z))
+		}
 		a.mode = state.ModePlaying
 	}
 }
 
+type earthSnap struct {
+	tick uint64
+	pos  protocol.Vector3
+	vel  protocol.Vector3
+	at   time.Time
+}
+
 func (a *App) draw() {
-	a.earthPos = a.nc.EarthPos()
-	a.earthVel = a.nc.EarthVel()
-	a.scene.SetEarthPos(a.earthPos)
 
 	// Камера уже в helio (flight.Pos в helio) — без сдвига.
 	epV := rl.NewVector3(a.earthPos.X, a.earthPos.Y, a.earthPos.Z)
@@ -2170,6 +2461,8 @@ func (a *App) drawPause() {
 }
 
 func (a *App) drawHUD() {
+	a.drawMiniStatus()
+
 	// Индикатор привязки в креативе.
 	if a.flight != nil && a.flight.Mode == input.ModeCreative {
 		lbl := "FREE"
@@ -2182,7 +2475,8 @@ func (a *App) drawHUD() {
 			lbl = "ATTACHED: SUN"
 			col = rl.NewColor(240, 180, 60, 240)
 		}
-		fonts.Draw("R — cycle: "+lbl, 30, 30, 18, col)
+		fonts.Draw("FRAME: "+lbl, 30, 210, 16, col)
+		fonts.Draw("R — переключить систему отсчёта", 30, 232, 13, rl.NewColor(140, 160, 200, 200))
 	}
 
 	const pad = int32(10)
@@ -2332,6 +2626,7 @@ func (a *App) drawHUD() {
 	rl.DrawRectangle(hpBarX, hpBarY, int32(hpFill), int32(hpBarH), rl.NewColor(200, 40, 40, 255))
 	rl.DrawRectangleLines(hpBarX, hpBarY, int32(hpBarW), int32(hpBarH), rl.Black)
 	fonts.Draw(fmt.Sprintf("HP: %d", hpVal), hpBarX+int32(hpBarW)+8, hpBarY, 16, rl.RayWhite)
+	a.drawDebugOverlay()
 }
 
 // drawHotbar — первая строка инвентаря внизу по центру.
@@ -3249,4 +3544,170 @@ func (a *App) drawProjectiles() {
 		rl.DrawSphere(p.pos, 0.4, rl.NewColor(255, 220, 60, 255))
 		rl.DrawSphereWires(p.pos, 0.4, 12, 12, rl.NewColor(180, 140, 20, 255))
 	}
+}
+
+func (a *App) drawDebugOverlay() {
+	if !a.showDebug || a.flight == nil {
+		return
+	}
+	sw := int32(rl.GetScreenWidth())
+	x := sw - 340
+	y := int32(80)
+	col := rl.NewColor(200, 220, 255, 220)
+	colDim := rl.NewColor(140, 160, 200, 180)
+
+	fonts.Draw("F3 DEBUG", x, y, 16, rl.NewColor(255, 200, 60, 255))
+	y += 22
+
+	helioStr := fmt.Sprintf("HELIO %.1f %.1f %.1f",
+		a.flight.Pos.X, a.flight.Pos.Y, a.flight.Pos.Z)
+	fonts.Draw(helioStr, x, y, 14, col)
+	y += 18
+
+	relX := a.flight.Pos.X - a.earthPos.X
+	relY := a.flight.Pos.Y - a.earthPos.Y
+	relZ := a.flight.Pos.Z - a.earthPos.Z
+	relDist := float32(math.Sqrt(float64(relX*relX + relY*relY + relZ*relZ)))
+	geoStr := fmt.Sprintf("GEO  %.1f %.1f %.1f  |r|=%.2f",
+		relX, relY, relZ, relDist)
+	fonts.Draw(geoStr, x, y, 14, col)
+	y += 18
+
+	velLen := float32(math.Sqrt(float64(
+		a.flight.Vel.X*a.flight.Vel.X +
+			a.flight.Vel.Y*a.flight.Vel.Y +
+			a.flight.Vel.Z*a.flight.Vel.Z)))
+	velStr := fmt.Sprintf("VEL  %.2f (%.2f %.2f %.2f)",
+		velLen, a.flight.Vel.X, a.flight.Vel.Y, a.flight.Vel.Z)
+	fonts.Draw(velStr, x, y, 14, col)
+	y += 18
+
+	surfaceR := protocol.SurfaceRadius(protocol.Vector3{X: relX, Y: relY, Z: relZ})
+	minR := surfaceR + protocol.PlayerHeight
+	onGround := relDist <= minR+0.5
+	stateStr := "AIRBORNE"
+	stateCol := rl.NewColor(240, 180, 100, 240)
+	if onGround {
+		stateStr = "ON GROUND"
+		stateCol = rl.NewColor(100, 240, 120, 240)
+	}
+	stateFull := fmt.Sprintf("%s  minR=%.2f", stateStr, minR)
+	fonts.Draw(stateFull, x, y, 14, stateCol)
+	y += 18
+
+	modeStr := "SURVIVAL"
+	if a.flight.Mode == input.ModeCreative {
+		modeStr = "CREATIVE"
+		if a.flight.AttachedBody != "" {
+			modeStr += "  ATTACHED:" + a.flight.AttachedBody
+		}
+	}
+	fonts.Draw(modeStr, x, y, 14, colDim)
+	y += 18
+
+	earthStr := fmt.Sprintf("EARTH %.1f %.1f %.1f",
+		a.earthPos.X, a.earthPos.Y, a.earthPos.Z)
+	fonts.Draw(earthStr, x, y, 14, colDim)
+	y += 18
+	earthVelStr := fmt.Sprintf("EVEL %.2f %.2f %.2f",
+		a.earthVel.X, a.earthVel.Y, a.earthVel.Z)
+	fonts.Draw(earthVelStr, x, y, 14, colDim)
+}
+
+// drawMiniStatus — компактный HUD: тело, состояние (ON GROUND/AIRBORNE), высота, скорость.
+func (a *App) drawMiniStatus() {
+	if a.flight == nil {
+		return
+	}
+
+	// Позиция относительно текущего тела.
+	bodyName := "EARTH"
+	var bodyPos protocol.Vector3
+	bodyRadius := protocol.PlanetRadius
+	if a.flight.AttachedBody == "sun" {
+		bodyName = "SUN"
+		bodyPos = protocol.SunPos
+		bodyRadius = protocol.SunRadius
+	} else {
+		bodyPos = a.earthPos
+	}
+
+	relX := a.flight.Pos.X - bodyPos.X
+	relY := a.flight.Pos.Y - bodyPos.Y
+	relZ := a.flight.Pos.Z - bodyPos.Z
+	relDist := float32(math.Sqrt(float64(relX*relX + relY*relY + relZ*relZ)))
+
+	surfaceR := bodyRadius
+	if bodyName == "EARTH" {
+		surfaceR = protocol.SurfaceRadius(protocol.Vector3{X: relX, Y: relY, Z: relZ})
+	}
+	alt := relDist - surfaceR
+
+	// Скорость относительно тела.
+	var bodyVel protocol.Vector3
+	if bodyName == "EARTH" {
+		bodyVel = a.earthVel
+	}
+	relVx := a.flight.Vel.X - bodyVel.X
+	relVy := a.flight.Vel.Y - bodyVel.Y
+	relVz := a.flight.Vel.Z - bodyVel.Z
+	relSpeed := float32(math.Sqrt(float64(relVx*relVx + relVy*relVy + relVz*relVz)))
+
+	// Радиальная скорость (вверх/вниз).
+	upX := relX / relDist
+	upY := relY / relDist
+	upZ := relZ / relDist
+	radialVel := relVx*upX + relVy*upY + relVz*upZ
+
+	onGround := alt <= protocol.PlayerHeight+0.5
+
+	// Панель.
+	x := int32(20)
+	y := int32(120)
+	pad := int32(10)
+	panelW := int32(220)
+	panelH := int32(70)
+
+	bg := rl.NewColor(10, 15, 30, 200)
+	rl.DrawRectangle(x, y, panelW, panelH, bg)
+	rl.DrawRectangleLines(x, y, panelW, panelH, rl.NewColor(120, 180, 240, 255))
+
+	// Строка 1: тело + статус.
+	bodyCol := rl.NewColor(100, 180, 240, 255)
+	if bodyName == "SUN" {
+		bodyCol = rl.NewColor(240, 180, 60, 255)
+	}
+	fonts.Draw(bodyName, x+pad, y+pad, 16, bodyCol)
+
+	statusStr := "AIRBORNE"
+	statusCol := rl.NewColor(240, 180, 100, 255)
+	if onGround {
+		statusStr = "ON GROUND"
+		statusCol = rl.NewColor(100, 240, 120, 255)
+	}
+	fonts.Draw(statusStr, x+pad+80, y+pad, 16, statusCol)
+
+	// Строка 2: высота.
+	altStr := fmt.Sprintf("ALT %.1f m", alt)
+	fonts.Draw(altStr, x+pad, y+pad+22, 14, rl.RayWhite)
+
+	// Строка 3: скорость.
+	spdStr := fmt.Sprintf("SPD %.1f m/s", relSpeed)
+	fonts.Draw(spdStr, x+pad, y+pad+42, 14, rl.RayWhite)
+
+	// Если в воздухе — показать вертикальную скорость.
+	if !onGround {
+		vsStr := fmt.Sprintf("V/S %+.1f m/s", radialVel)
+		vsCol := rl.NewColor(200, 200, 220, 220)
+		if radialVel > 0.5 {
+			vsCol = rl.NewColor(100, 240, 120, 240) // вверх
+		} else if radialVel < -0.5 {
+			vsCol = rl.NewColor(240, 120, 120, 240) // вниз
+		}
+		fonts.Draw(vsStr, x+pad+100, y+pad+42, 14, vsCol)
+	}
+}
+
+func (a *App) earthPosAsRl() rl.Vector3 {
+	return rl.NewVector3(a.earthPos.X, a.earthPos.Y, a.earthPos.Z)
 }
