@@ -961,6 +961,8 @@ func (a *App) draw() {
 
 		a.scene.Draw()
 		a.scene.DrawWater()
+		a.scene.DrawClouds(camRender)
+		a.scene.DrawAtmosphere(camRender)
 		render.DrawPlayers(a.nc.InterpolatedSnapshot(), a.nc.PlayerID(), a.camera)
 		render.DrawResources(a.nc.Resources())
 		render.DrawMammoths(a.nc.Mammoths())
