@@ -360,6 +360,7 @@ func (c *Client) StartStateLoop() {
 				c.stateMu.Lock()
 				st := c.lastState
 				c.stateMu.Unlock()
+				st.RTTms = int32(c.RTT().Milliseconds())
 				_ = c.send(protocol.TypeState, st)
 			case <-c.done:
 				return

@@ -76,6 +76,9 @@ func (s *Server) handleMessage(c *Client, env *protocol.Envelope) {
 		st.Y = pos.Y
 		st.Z = pos.Z
 		c.setState(st)
+		if st.RTTms > 0 {
+			s.metrics.RTTSeconds.Observe(float64(st.RTTms) / 1000.0)
+		}
 	case protocol.TypeChat:
 		var cm protocol.ChatMessage
 		if err := env.Decode(&cm); err != nil {
