@@ -98,6 +98,15 @@ networkPolicy:
   adminPortFromNamespaces:
     - monitoring
 
+
+# Persistence for world state (StatefulSet volumeClaimTemplates)
+persistence:
+  enabled: true
+  size: 1Gi
+  accessMode: ReadWriteOnce
+  # storageClass: ""  # раскомментировать если нужен конкретный класс
+  mountPath: /data
+
 nodeSelector: {}
 tolerations: []
 affinity: {}
