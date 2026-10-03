@@ -1,0 +1,14 @@
+# Hadolint config — https://github.com/hadolint/hadolint
+ignored:
+  - DL3008  # pin apt versions (Debian) — не используем Debian
+  - DL3018  # pin apk versions (Alpine) — обновляем регулярно
+  - DL3059  # multiple RUN — ok для читаемости
+
+failure-threshold: warning
+
+override:
+  error:
+    - DL3002  # last USER should not be root
+    - DL3025  # use JSON notation for CMD
+  warning:
+    - DL3006  # always tag image version

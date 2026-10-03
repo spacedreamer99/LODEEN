@@ -1,0 +1,19 @@
+# Gitleaks config — https://github.com/gitleaks/gitleaks
+title = "LODEEN gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Global allowlist"
+paths = [
+  '''docs/.*\.md$''',
+  '''.*_test\.go$''',
+  '''.*\.example$''',
+  '''.*\.bak$''',
+]
+regexes = [
+  '''(?i)example[_-]?token''',
+  '''(?i)dummy[_-]?secret''',
+  '''(?i)placeholder''',
+]
