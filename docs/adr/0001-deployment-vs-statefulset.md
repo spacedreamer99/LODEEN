@@ -1,6 +1,6 @@
 # ADR 0001: StatefulSet вместо Deployment для мира
 
-- **Status:** accepted (2026-10-03)
+- **Status:** accepted + implemented (2026-10-03)
 - **Deciders:** project owner
 
 ## Context
