@@ -111,7 +111,7 @@ func (a *App) draw() {
 			a.drawRocketHUD()
 			a.drawNavBall()
 		}
-		if a.showOrbitMap {
+		if a.orbit.showOrbitMap {
 			a.drawOrbitMap()
 		}
 	}

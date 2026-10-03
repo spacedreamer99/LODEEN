@@ -10,16 +10,16 @@ import (
 )
 
 func (a *App) drawOrbitMap() {
-	r := a.hudRocket
+	r := a.rocket.hudRocket
 	haveRocket := r.ID != ""
 
 	const seg = 96
 
 	// Инициализация камеры при первом открытии.
-	if !a.orbitInit {
-		a.orbitInit = true
-		a.orbitAzimuth = 0.6
-		a.orbitElevation = 0.5
+	if !a.orbit.orbitInit {
+		a.orbit.orbitInit = true
+		a.orbit.orbitAzimuth = 0.6
+		a.orbit.orbitElevation = 0.5
 		dist := float32(500.0)
 		if haveRocket {
 			dist = r.Altitude * 2.5
@@ -36,7 +36,7 @@ func (a *App) drawOrbitMap() {
 		if dist > 150000 {
 			dist = 150000
 		}
-		a.orbitDistance = dist
+		a.orbit.orbitDistance = dist
 	}
 
 	// Центр карты: orbitFocus или auto (primary body).
@@ -51,7 +51,7 @@ func (a *App) drawOrbitMap() {
 	}
 
 	var center rl.Vector3
-	switch a.orbitFocus {
+	switch a.orbit.orbitFocus {
 	case "earth":
 		center = earthH
 	case "sun":
@@ -69,17 +69,17 @@ func (a *App) drawOrbitMap() {
 
 	// Масштаб: обходим far plane raylib (~1000) — рисуем в scaled-space.
 	scale := float32(1.0)
-	if a.orbitDistance > 900 {
-		scale = a.orbitDistance / 900
+	if a.orbit.orbitDistance > 900 {
+		scale = a.orbit.orbitDistance / 900
 	}
-	distS := a.orbitDistance / scale
+	distS := a.orbit.orbitDistance / scale
 	centerS := rl.NewVector3(center.X/scale, center.Y/scale, center.Z/scale)
 
-	cosEl := float32(math.Cos(float64(a.orbitElevation)))
+	cosEl := float32(math.Cos(float64(a.orbit.orbitElevation)))
 	camPos := rl.NewVector3(
-		centerS.X+distS*cosEl*float32(math.Cos(float64(a.orbitAzimuth))),
-		centerS.Y+distS*float32(math.Sin(float64(a.orbitElevation))),
-		centerS.Z+distS*cosEl*float32(math.Sin(float64(a.orbitAzimuth))),
+		centerS.X+distS*cosEl*float32(math.Cos(float64(a.orbit.orbitAzimuth))),
+		centerS.Y+distS*float32(math.Sin(float64(a.orbit.orbitElevation))),
+		centerS.Z+distS*cosEl*float32(math.Sin(float64(a.orbit.orbitAzimuth))),
 	)
 
 	mapCam := rl.Camera3D{
@@ -362,8 +362,8 @@ func (a *App) drawOrbitMap() {
 			rl.DrawCircleLines(cx, cy, 22, rl.NewColor(255, 220, 100, 140))
 			rl.DrawCircleLines(cx, cy, 28, rl.NewColor(255, 220, 100, 80))
 			fonts.Draw("SUN", cx+20, cy-10, 16, rl.NewColor(255, 220, 100, 255))
-			a.sunScrX = float32(cx)
-			a.sunScrY = float32(cy)
+			a.orbit.sunScrX = float32(cx)
+			a.orbit.sunScrY = float32(cy)
 		}
 	}
 
@@ -383,8 +383,8 @@ func (a *App) drawOrbitMap() {
 		rl.DrawCircleLines(cx, cy, 20, rl.NewColor(255, 140, 60, 140))
 		rl.DrawCircleLines(cx, cy, 26, rl.NewColor(255, 140, 60, 80))
 		fonts.Draw("STAR2", cx+18, cy-10, 16, rl.NewColor(255, 140, 60, 255))
-		a.star2ScrX = float32(cx)
-		a.star2ScrY = float32(cy)
+		a.orbit.star2ScrX = float32(cx)
+		a.orbit.star2ScrY = float32(cy)
 	}
 
 	// Planet2 — 2D overlay.
@@ -402,8 +402,8 @@ func (a *App) drawOrbitMap() {
 		rl.DrawCircleLines(cx, cy, 8, rl.NewColor(40, 120, 160, 255))
 		rl.DrawCircleLines(cx, cy, 12, rl.NewColor(80, 180, 200, 140))
 		fonts.Draw("PLANET2", cx+12, cy-8, 14, rl.NewColor(120, 200, 220, 255))
-		a.planet2ScrX = float32(cx)
-		a.planet2ScrY = float32(cy)
+		a.orbit.planet2ScrX = float32(cx)
+		a.orbit.planet2ScrY = float32(cy)
 	}
 
 	// Общие forward-компоненты камеры (для проверки «перед камерой»).
@@ -440,9 +440,9 @@ func (a *App) drawOrbitMap() {
 				rl.DrawCircleLines(cx, cy, soiR, rl.NewColor(120, 180, 240, 90))
 			}
 			// Сохраняем для обработки клика.
-			a.earthScrX = float32(cx)
-			a.earthScrY = float32(cy)
-			a.earthScrR = projR
+			a.orbit.earthScrX = float32(cx)
+			a.orbit.earthScrY = float32(cy)
+			a.orbit.earthScrR = projR
 			// Планета.
 			rl.DrawCircle(cx, cy, projR, rl.NewColor(60, 130, 200, 255))
 			rl.DrawCircleLines(cx, cy, projR, rl.NewColor(140, 200, 255, 255))
@@ -477,8 +477,8 @@ func (a *App) drawOrbitMap() {
 				rl.DrawCircleLines(cx, cy, 6, rl.NewColor(20, 80, 20, 255))
 				rl.DrawCircleLines(cx, cy, 10, rl.NewColor(80, 220, 100, 200))
 				rl.DrawCircleLines(cx, cy, 14, rl.NewColor(80, 220, 100, 100))
-				a.rocketScrX = float32(cx)
-				a.rocketScrY = float32(cy)
+				a.orbit.rocketScrX = float32(cx)
+				a.orbit.rocketScrY = float32(cy)
 			}
 		}
 	} // конец if haveRocket (2D)
@@ -486,7 +486,7 @@ func (a *App) drawOrbitMap() {
 	// Оверлей поверх 3D.
 	fonts.Draw("ORBITAL MAP", 30, 30, 28, rl.NewColor(150, 200, 255, 255))
 	focusLbl := "FOCUS: AUTO (" + r.PrimaryBody + ")"
-	switch a.orbitFocus {
+	switch a.orbit.orbitFocus {
 	case "earth":
 		focusLbl = "FOCUS: EARTH"
 	case "sun":
@@ -556,8 +556,8 @@ func (a *App) drawOrbitMap() {
 
 	// Текущий автопилот.
 	cur := "MANUAL"
-	if a.autoPilot != "" {
-		cur = a.autoPilot
+	if a.rocket.autoPilot != "" {
+		cur = a.rocket.autoPilot
 	}
 	fonts.Draw("current: "+cur, apX, apY+8, 16, rl.RayWhite)
 }

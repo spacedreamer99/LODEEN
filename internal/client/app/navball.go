@@ -9,7 +9,7 @@ import (
 )
 
 func (a *App) drawNavBall() {
-	r := a.hudRocket
+	r := a.rocket.hudRocket
 	if r.ID == "" {
 		return
 	}
@@ -128,7 +128,7 @@ func (a *App) drawNavBall() {
 	// Текущий автопилот — под навболом.
 	label := "MANUAL"
 	col := rl.LightGray
-	switch a.autoPilot {
+	switch a.rocket.autoPilot {
 	case "prograde":
 		label = "PROGRADE"
 		col = rl.NewColor(80, 220, 100, 255)
@@ -156,7 +156,7 @@ func (a *App) drawRocketHUD() {
 	if a.player.rocketID == "" {
 		return
 	}
-	r := a.hudRocket
+	r := a.rocket.hudRocket
 	if r.ID != a.player.rocketID {
 		return
 	}

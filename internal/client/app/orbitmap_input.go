@@ -10,26 +10,26 @@ func (a *App) updateOrbitMapInput() {
 	md := rl.GetMouseDelta()
 
 	if rl.IsMouseButtonPressed(rl.MouseLeftButton) {
-		a.orbitDragged = false
-		a.orbitMouseStartX = float32(rl.GetMouseX())
-		a.orbitMouseStartY = float32(rl.GetMouseY())
+		a.orbit.orbitDragged = false
+		a.orbit.orbitMouseStartX = float32(rl.GetMouseX())
+		a.orbit.orbitMouseStartY = float32(rl.GetMouseY())
 	}
 	if rl.IsMouseButtonDown(rl.MouseLeftButton) {
 		if md.X*md.X+md.Y*md.Y > 4 {
-			a.orbitDragged = true
+			a.orbit.orbitDragged = true
 		}
-		if a.orbitDragged {
-			a.orbitAzimuth += md.X * 0.008
-			a.orbitElevation += md.Y * 0.008
-			if a.orbitElevation < -1.4 {
-				a.orbitElevation = -1.4
+		if a.orbit.orbitDragged {
+			a.orbit.orbitAzimuth += md.X * 0.008
+			a.orbit.orbitElevation += md.Y * 0.008
+			if a.orbit.orbitElevation < -1.4 {
+				a.orbit.orbitElevation = -1.4
 			}
-			if a.orbitElevation > 1.4 {
-				a.orbitElevation = 1.4
+			if a.orbit.orbitElevation > 1.4 {
+				a.orbit.orbitElevation = 1.4
 			}
 		}
 	}
-	if rl.IsMouseButtonReleased(rl.MouseLeftButton) && !a.orbitDragged {
+	if rl.IsMouseButtonReleased(rl.MouseLeftButton) && !a.orbit.orbitDragged {
 		mx := rl.GetMouseX()
 		my := rl.GetMouseY()
 		a.handleOrbitMapClick(mx, my)
@@ -41,28 +41,28 @@ func (a *App) updateOrbitMapInput() {
 		if rl.IsKeyDown(rl.KeyLeftShift) || rl.IsKeyDown(rl.KeyRightShift) {
 			mult *= 4
 		}
-		a.orbitDistance *= 1.0 - mult
-		if a.orbitDistance < 40 {
-			a.orbitDistance = 40
+		a.orbit.orbitDistance *= 1.0 - mult
+		if a.orbit.orbitDistance < 40 {
+			a.orbit.orbitDistance = 40
 		}
-		if a.orbitDistance > 150000 {
-			a.orbitDistance = 150000
+		if a.orbit.orbitDistance > 150000 {
+			a.orbit.orbitDistance = 150000
 		}
 	}
 	if rl.IsKeyPressed(rl.KeyF) {
-		switch a.orbitFocus {
+		switch a.orbit.orbitFocus {
 		case "":
-			a.orbitFocus = "earth"
+			a.orbit.orbitFocus = "earth"
 		case "earth":
-			a.orbitFocus = "sun"
+			a.orbit.orbitFocus = "sun"
 		case "sun":
-			a.orbitFocus = "star2"
+			a.orbit.orbitFocus = "star2"
 		case "star2":
-			a.orbitFocus = "planet2"
+			a.orbit.orbitFocus = "planet2"
 		case "planet2":
-			a.orbitFocus = "rocket"
+			a.orbit.orbitFocus = "rocket"
 		default:
-			a.orbitFocus = ""
+			a.orbit.orbitFocus = ""
 		}
 	}
 }
@@ -71,46 +71,46 @@ func (a *App) handleOrbitMapClick(mx, my int32) {
 	mfx := float32(mx)
 	mfy := float32(my)
 	// Ракета — приоритет.
-	dx := mfx - a.rocketScrX
-	dy := mfy - a.rocketScrY
+	dx := mfx - a.orbit.rocketScrX
+	dy := mfy - a.orbit.rocketScrY
 	if dx*dx+dy*dy < 22*22 {
-		a.orbitFocus = "rocket"
+		a.orbit.orbitFocus = "rocket"
 		return
 	}
 	// Земля.
-	dx = mfx - a.earthScrX
-	dy = mfy - a.earthScrY
-	rr := a.earthScrR + 12
+	dx = mfx - a.orbit.earthScrX
+	dy = mfy - a.orbit.earthScrY
+	rr := a.orbit.earthScrR + 12
 	if rr < 24 {
 		rr = 24
 	}
 	if dx*dx+dy*dy < rr*rr {
-		a.orbitFocus = "earth"
+		a.orbit.orbitFocus = "earth"
 		return
 	}
 	// Солнце.
-	dx = mfx - a.sunScrX
-	dy = mfy - a.sunScrY
+	dx = mfx - a.orbit.sunScrX
+	dy = mfy - a.orbit.sunScrY
 	if dx*dx+dy*dy < 40*40 {
-		a.orbitFocus = "sun"
+		a.orbit.orbitFocus = "sun"
 		return
 	}
 	// Star2.
-	dx = mfx - a.star2ScrX
-	dy = mfy - a.star2ScrY
+	dx = mfx - a.orbit.star2ScrX
+	dy = mfy - a.orbit.star2ScrY
 	if dx*dx+dy*dy < 40*40 {
-		a.orbitFocus = "star2"
+		a.orbit.orbitFocus = "star2"
 		return
 	}
 	// Planet2.
-	dx = mfx - a.planet2ScrX
-	dy = mfy - a.planet2ScrY
+	dx = mfx - a.orbit.planet2ScrX
+	dy = mfy - a.orbit.planet2ScrY
 	if dx*dx+dy*dy < 30*30 {
-		a.orbitFocus = "planet2"
+		a.orbit.orbitFocus = "planet2"
 		return
 	}
 	// Пустое место — авто.
-	a.orbitFocus = ""
+	a.orbit.orbitFocus = ""
 }
 
 func rotateAroundAxis(v, axis rl.Vector3, angle float32) rl.Vector3 {

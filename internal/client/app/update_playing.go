@@ -195,16 +195,16 @@ func (a *App) updateChatOverlay() bool {
 
 func (a *App) updateOrbitMapOverlay() bool {
 	if rl.IsKeyPressed(rl.KeyM) {
-		a.showOrbitMap = !a.showOrbitMap
-		if a.showOrbitMap {
-			a.orbitInit = false
+		a.orbit.showOrbitMap = !a.orbit.showOrbitMap
+		if a.orbit.showOrbitMap {
+			a.orbit.orbitInit = false
 			rl.EnableCursor()
 			rl.ShowCursor()
 		} else {
 			rl.DisableCursor()
 		}
 	}
-	if a.showOrbitMap {
+	if a.orbit.showOrbitMap {
 		a.updateOrbitMapInput()
 		return true
 	}
