@@ -128,6 +128,20 @@ Prod-оверрайды:
 
 ![ArgoCD LODEEN](docs/img/argocd-lodeen.png)
 
+## Local dev
+
+Поднять все port-forward'ы одной командой:
+
+    ./scripts/pf.sh
+
+Откроет:
+- Grafana: http://localhost:3000 (admin/admin)
+- Prometheus: http://localhost:9090
+- Alertmanager: http://localhost:9093
+- ArgoCD: https://localhost:8081
+- LODEEN game: localhost:7777
+- LODEEN admin: http://localhost:19091
+
 ## Infrastructure as Code
 
 Готовые скелеты для развёртывания на VPS. Запуск — когда появится сервер.
