@@ -28,8 +28,27 @@ Prometheus rules, GitHub Actions CI.
 | `server/net/mammoths.go` | 533 строки, `tickMammoths` 149 строк | 4 файла, оркестратор 18 строк + 3 фазы | `d02b405` |
 | `client/input/flight.go` | 545 строк, `updateSurvival` 117 строк | 4 файла, оркестратор 41 строка + 3 фазы | `b2521e1` |
 
-Итого: ~4300 строк кода переразложено. Ни одной новой функции с логикой —
+Итого: ~5000 строк кода переразложено. Ни одной новой функции с логикой —
 только extract, rename и группировка.
+
+## Server architecture (ADR 0001)
+
+После решения «server-authoritative для 32-игроковых миров» (`docs/adr/0001-*`)
+сервер прошёл внутреннюю чистку без изменения поведения:
+
+| Файл / домен | Было | Стало | Коммит |
+|---|---|---|---|
+| `server.go` | 417 строк монолита | 4 файла: server + conn + tick + util | `8fe082e` |
+| `Server struct` | 11 пар `xMu + x map` | 11 типизированных `store[T]` | `f5fe13e`, `515fee7` |
+| `handleConn` | 84 строки | 25-строчный оркестратор + 4 фазы | `8fe082e` |
+| `store[T]` | — | дженерик + 9 тестов + concurrent | `7c7c78a` |
+
+**`store[T]`** — дженерик-контейнер `map[string]T` с RWMutex. Один store
+на домен (rockets, mobs, mammoths, resources, wells, houses, solar,
+batteries, factories, boats, projectiles). Даёт:
+- единый API (`Get/Put/Delete/Len/Read/Update`)
+- lock-graph тривиально проверяем per-domain
+- один тест защищает все 11 доменов
 
 ## Приёмы
 
