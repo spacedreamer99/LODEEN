@@ -1,0 +1,50 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: lodeen
+  namespace: monitoring
+  labels:
+    release: kps
+spec:
+  groups:
+    - name: lodeen.slo
+      interval: 30s
+      rules:
+        - alert: LodeenDown
+          expr: |
+            up{job="lodeen"} == 0
+            or
+            absent(up{job="lodeen"})
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "LODEEN server down"
+            description: "Instance {{ $labels.instance }} (pod {{ $labels.pod }}) is down for >1m."
+
+        - alert: LodeenTickSlow
+          expr: histogram_quantile(0.99, sum by (le) (rate(lodeen_tick_duration_seconds_bucket[5m]))) > 0.005
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "LODEEN tick p99 > 5 ms (SLO breach)"
+            description: "p99 tick duration = {{ $value }}s. SLO: < 0.005s."
+
+        - alert: LodeenRTTHigh
+          expr: histogram_quantile(0.95, sum by (le) (rate(lodeen_rtt_seconds_bucket[5m]))) > 0.2
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "LODEEN RTT p95 > 200 ms"
+            description: "p95 RTT = {{ $value }}s. Expected < 0.2s in-region."
+
+        - alert: LodeenNoPlayers
+          expr: sum(lodeen_server_players_connected) == 0
+          for: 30m
+          labels:
+            severity: info
+          annotations:
+            summary: "LODEEN has no players for 30m"
+            description: "World may be orphaned. Check discovery/federation."
