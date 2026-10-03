@@ -22,3 +22,7 @@ res/*.png~
 /server
 /lodeen-client
 /lodeen-server
+*.bak_*
+*.bak
+*.bak_*
+*.bak
