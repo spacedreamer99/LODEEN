@@ -104,7 +104,7 @@ func (a *App) syncFlightBodies(dt float32) {
 // --- UI lock: жёстко прибить игрока к Земле пока открыт UI ---
 
 func (a *App) applyUILock(dt float32) {
-	anyUI := a.showInventory || a.showCraft || a.showContract || a.showFactory || a.chat.Open
+	anyUI := a.ui.showInventory || a.ui.showCraft || a.ui.showContract || a.ui.showFactory || a.chat.Open
 	if a.flight == nil || !anyUI {
 		a.flightLocked = false
 		return
@@ -157,11 +157,11 @@ func (a *App) applyUILock(dt float32) {
 // --- Диалоги ---
 
 func (a *App) updateDialogOverlays() bool {
-	if a.showContract {
+	if a.ui.showContract {
 		a.updateContract()
 		return true
 	}
-	if a.showFactory {
+	if a.ui.showFactory {
 		a.updateFactory()
 		return true
 	}
@@ -230,26 +230,26 @@ func (a *App) handleModeSwitchKey() {
 func (a *App) updateInventoryOverlay() bool {
 	// C — открыть окно крафта
 	if rl.IsKeyPressed(rl.KeyC) {
-		a.showCraft = true
-		a.showInventory = false
+		a.ui.showCraft = true
+		a.ui.showInventory = false
 		rl.EnableCursor()
 		rl.ShowCursor()
 	}
 	// I — toggle инвентаря
 	if rl.IsKeyPressed(rl.KeyI) {
-		a.showInventory = !a.showInventory
-		if a.showInventory {
-			a.showCraft = false
+		a.ui.showInventory = !a.ui.showInventory
+		if a.ui.showInventory {
+			a.ui.showCraft = false
 			rl.EnableCursor()
 			rl.ShowCursor()
 		} else {
 			rl.DisableCursor()
 		}
 	}
-	if a.showInventory || a.showCraft {
+	if a.ui.showInventory || a.ui.showCraft {
 		if rl.IsKeyPressed(rl.KeyEscape) {
-			a.showInventory = false
-			a.showCraft = false
+			a.ui.showInventory = false
+			a.ui.showCraft = false
 			rl.DisableCursor()
 		}
 		return true
@@ -265,9 +265,9 @@ func (a *App) updateSlotWheel() {
 	}
 	wheel := rl.GetMouseWheelMove()
 	if wheel > 0 {
-		a.selectedSlot = (a.selectedSlot + 1) % 16
+		a.ui.selectedSlot = (a.ui.selectedSlot + 1) % 16
 	} else if wheel < 0 {
-		a.selectedSlot = (a.selectedSlot + 15) % 16
+		a.ui.selectedSlot = (a.ui.selectedSlot + 15) % 16
 	}
 }
 
@@ -423,19 +423,19 @@ func (a *App) handleEmptyHandClick() bool {
 		return true
 	}
 	if id := a.factoryInSight(); id != "" {
-		a.factoryID = id
-		a.showFactory = true
-		a.factoryOpenedAt = time.Now()
+		a.ui.factoryID = id
+		a.ui.showFactory = true
+		a.ui.factoryOpenedAt = time.Now()
 		rl.EnableCursor()
 		rl.ShowCursor()
 		a.log.Info("factory dialog opened", "id", id)
 		return true
 	}
 	if id, pos := a.pinkMobInSight(); id != "" {
-		a.contractMobID = id
-		a.contractPos = pos
-		a.showContract = true
-		a.contractOpenedAt = time.Now()
+		a.ui.contractMobID = id
+		a.ui.contractPos = pos
+		a.ui.showContract = true
+		a.ui.contractOpenedAt = time.Now()
 		rl.EnableCursor()
 		rl.ShowCursor()
 		a.log.Info("contract dialog opened", "mob", id)

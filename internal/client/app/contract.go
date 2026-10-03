@@ -10,19 +10,19 @@ import (
 )
 
 func (a *App) updateContract() {
-	if time.Since(a.contractOpenedAt) < 250*time.Millisecond {
+	if time.Since(a.ui.contractOpenedAt) < 250*time.Millisecond {
 		return
 	}
 	if rl.IsKeyPressed(rl.KeyEscape) {
-		a.showContract = false
-		a.contractMobID = ""
+		a.ui.showContract = false
+		a.ui.contractMobID = ""
 		rl.DisableCursor()
 		return
 	}
 }
 
 func (a *App) drawContract() {
-	ignoreClicks := time.Since(a.contractOpenedAt) < 250*time.Millisecond
+	ignoreClicks := time.Since(a.ui.contractOpenedAt) < 250*time.Millisecond
 	sw := int32(rl.GetScreenWidth())
 	sh := int32(rl.GetScreenHeight())
 
@@ -53,9 +53,9 @@ func (a *App) drawContract() {
 	}
 	g1.Draw()
 	if !ignoreClicks && g1.Clicked() {
-		_ = a.nc.AcceptContract(a.contractMobID, "gather4")
-		a.showContract = false
-		a.contractMobID = ""
+		_ = a.nc.AcceptContract(a.ui.contractMobID, "gather4")
+		a.ui.showContract = false
+		a.ui.contractMobID = ""
 		rl.DisableCursor()
 	}
 
@@ -65,9 +65,9 @@ func (a *App) drawContract() {
 	}
 	g2.Draw()
 	if !ignoreClicks && g2.Clicked() {
-		_ = a.nc.AcceptContract(a.contractMobID, "guard")
-		a.showContract = false
-		a.contractMobID = ""
+		_ = a.nc.AcceptContract(a.ui.contractMobID, "guard")
+		a.ui.showContract = false
+		a.ui.contractMobID = ""
 		rl.DisableCursor()
 	}
 

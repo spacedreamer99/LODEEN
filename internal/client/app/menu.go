@@ -28,15 +28,15 @@ func (a *App) drawMenu() {
 	// Ник
 	fonts.Draw("Nick", fx, centerY, 18, rl.LightGray)
 	nickRect := rl.NewRectangle(float32(fx), float32(centerY+22), fw, 36)
-	if ui.TextField(nickRect, a.menuNick, a.menuFocus == 0) {
-		a.menuFocus = 0
+	if ui.TextField(nickRect, a.ui.menuNick, a.ui.menuFocus == 0) {
+		a.ui.menuFocus = 0
 	}
 
 	// Server
 	fonts.Draw("Server", fx, centerY+76, 18, rl.LightGray)
 	addrRect := rl.NewRectangle(float32(fx), float32(centerY+98), fw, 36)
-	if ui.TextField(addrRect, a.menuAddr, a.menuFocus == 1) {
-		a.menuFocus = 1
+	if ui.TextField(addrRect, a.ui.menuAddr, a.ui.menuFocus == 1) {
+		a.ui.menuFocus = 1
 	}
 
 	// Connect
@@ -65,8 +65,8 @@ func (a *App) drawMenu() {
 	}
 
 	// Ошибка
-	if a.menuErr != "" {
-		fonts.Draw(a.menuErr, fx, centerY+350, 18, rl.Red)
+	if a.ui.menuErr != "" {
+		fonts.Draw(a.ui.menuErr, fx, centerY+350, 18, rl.Red)
 	}
 
 	// Подсказка внизу по центру

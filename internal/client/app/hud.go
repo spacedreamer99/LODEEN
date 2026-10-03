@@ -154,10 +154,10 @@ func (a *App) drawHUD() {
 	sh := int(rl.GetScreenHeight())
 	a.chat.Draw(sw, sh-30)
 
-	if a.showInventory {
+	if a.ui.showInventory {
 		a.drawInventory()
 	}
-	if a.showCraft {
+	if a.ui.showCraft {
 		a.drawCraft()
 	}
 
@@ -207,13 +207,13 @@ func (a *App) drawHotbar() {
 		rl.DrawRectangleRec(rect, rl.NewColor(30, 30, 40, 255))
 		rl.DrawRectangleLinesEx(rect, 1, rl.NewColor(70, 70, 90, 255))
 
-		if i == a.selectedSlot {
+		if i == a.ui.selectedSlot {
 			rl.DrawRectangleLinesEx(rect, 3, rl.NewColor(255, 220, 90, 255))
 		}
 
 		typ := ""
-		if i < len(a.invSlots) {
-			typ = a.invSlots[i]
+		if i < len(a.ui.invSlots) {
+			typ = a.ui.invSlots[i]
 		}
 		if typ != "" {
 			col := itemColor(typ)

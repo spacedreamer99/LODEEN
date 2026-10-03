@@ -10,18 +10,18 @@ import (
 )
 
 func (a *App) updateFactory() {
-	if time.Since(a.factoryOpenedAt) < 250*time.Millisecond {
+	if time.Since(a.ui.factoryOpenedAt) < 250*time.Millisecond {
 		return
 	}
 	if rl.IsKeyPressed(rl.KeyEscape) {
-		a.showFactory = false
-		a.factoryID = ""
+		a.ui.showFactory = false
+		a.ui.factoryID = ""
 		rl.DisableCursor()
 	}
 }
 
 func (a *App) drawFactory() {
-	ignoreClicks := time.Since(a.factoryOpenedAt) < 250*time.Millisecond
+	ignoreClicks := time.Since(a.ui.factoryOpenedAt) < 250*time.Millisecond
 
 	sw := int32(rl.GetScreenWidth())
 	sh := int32(rl.GetScreenHeight())
@@ -66,7 +66,7 @@ func (a *App) drawFactory() {
 		}
 		btn.Draw()
 		if !ignoreClicks && btn.Clicked() {
-			if err := a.nc.CraftFactory(a.factoryID, r.id); err != nil {
+			if err := a.nc.CraftFactory(a.ui.factoryID, r.id); err != nil {
 				a.log.Warn("factory craft", "err", err)
 			}
 			a.log.Info("factory craft sent", "recipe", r.id)
