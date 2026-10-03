@@ -57,10 +57,6 @@ func (a *App) draw() {
 		render.DrawBoats(a.nc.Boats())
 		render.DrawMobs(a.nc.Mobs())
 		projs := a.nc.Projectiles()
-		if len(projs) > 0 {
-			a.log.Debug("proj debug", "count", len(projs),
-				"first", projs[0].X, projs[0].Y, projs[0].Z)
-		}
 		render.DrawProjectiles(projs)
 		me := a.nc.PlayerID()
 		if me != "" {
