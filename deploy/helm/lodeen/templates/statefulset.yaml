@@ -9,7 +9,7 @@ spec:
   replicas: {{ .Values.replicaCount }}
   podManagementPolicy: OrderedReady
   updateStrategy:
-    type: Recreate
+    type: OnDelete
   selector:
     matchLabels:
       {{- include "lodeen.selectorLabels" . | nindent 6 }}
