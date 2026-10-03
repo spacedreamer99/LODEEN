@@ -97,27 +97,45 @@ func (s *Server) cheatClearInv(c *Client) {
 	c.log.Info("cheat: clearinv")
 }
 
-// cheatGet — /get<item><qty>, например /getfruit100.
-func (s *Server) cheatGet(c *Client, rest string) {
-	// Отделяем хвостовые цифры (количество).
+// parseGetArg парсит аргумент команды /get: "<item><qty>".
+// Отделяет хвостовые цифры как количество, ограничивает 100000.
+// Возвращает ok=false, если имя или количество пустые.
+//
+// Примеры:
+//
+//	"stone10"  -> ("stone", 10, true)
+//	"a0"       -> ("a", 0, true)
+//	"x9999999" -> ("x", 100000, true)  // clamp
+//	"stone"    -> ("", 0, false)        // нет количества
+//	"123"      -> ("", 0, false)        // нет имени
+//	""         -> ("", 0, false)
+func parseGetArg(rest string) (name string, qty int, ok bool) {
 	i := len(rest)
 	for i > 0 && rest[i-1] >= '0' && rest[i-1] <= '9' {
 		i--
 	}
-	name := rest[:i]
+	name = rest[:i]
 	qtyStr := rest[i:]
 	if name == "" || qtyStr == "" {
-		c.sendEnvelope(protocol.TypeChat, protocol.ChatMessage{
-			From: "server", Text: "usage: /get<item><qty>", TS: time.Now().UnixMilli(),
-		})
-		return
+		return "", 0, false
 	}
-	qty := 0
 	for _, ch := range qtyStr {
 		qty = qty*10 + int(ch-'0')
 	}
 	if qty > 100000 {
 		qty = 100000
+	}
+	return name, qty, true
+}
+
+// cheatGet — /get<item><qty>, например /getfruit100.
+func (s *Server) cheatGet(c *Client, rest string) {
+	name, qty, ok := parseGetArg(rest)
+	if !ok {
+		c.sendEnvelope(protocol.TypeChat, protocol.ChatMessage{
+			From: "server", Text: "usage: /get<item><qty>", TS: time.Now().UnixMilli(),
+		})
+		return
 	}
 	c.mu.Lock()
 	c.inventory[name] += qty
