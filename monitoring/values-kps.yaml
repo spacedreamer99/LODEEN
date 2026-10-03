@@ -1,0 +1,6 @@
+defaultRules:
+  rules:
+    kubeControllerManager: false
+    kubeScheduler: false
+    kubeProxy: false
+    kubeEtcd: false
