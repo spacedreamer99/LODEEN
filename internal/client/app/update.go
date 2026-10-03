@@ -287,11 +287,11 @@ func (a *App) updateDiag(dt float32) {
 func (a *App) updateMenu() {
 	a.setCursorCaptured(false)
 
-	ui.EditField(&a.menuNick, a.menuFocus == 0, 32)
-	ui.EditField(&a.menuAddr, a.menuFocus == 1, 64)
+	ui.EditField(&a.ui.menuNick, a.ui.menuFocus == 0, 32)
+	ui.EditField(&a.ui.menuAddr, a.ui.menuFocus == 1, 64)
 
 	if rl.IsKeyPressed(rl.KeyTab) {
-		a.menuFocus = (a.menuFocus + 1) % 2
+		a.ui.menuFocus = (a.ui.menuFocus + 1) % 2
 	}
 	if rl.IsKeyPressed(rl.KeyEnter) {
 		a.startConnect()

@@ -101,10 +101,10 @@ func (a *App) draw() {
 			a.drawPause()
 		}
 		a.drawHUD()
-		if a.showContract {
+		if a.ui.showContract {
 			a.drawContract()
 		}
-		if a.showFactory {
+		if a.ui.showFactory {
 			a.drawFactory()
 		}
 		if a.rocketID != "" {

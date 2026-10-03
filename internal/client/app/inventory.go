@@ -47,13 +47,13 @@ func (a *App) drawInventory() {
 			cy := gridY + row*cell
 			rect := rl.NewRectangle(float32(cx), float32(cy), float32(cell-2), float32(cell-2))
 			if rl.CheckCollisionPointRec(mouse, rect) {
-				a.dragging = true
-				a.dragFrom = i
+				a.ui.dragging = true
+				a.ui.dragFrom = i
 				break
 			}
 		}
 	}
-	if rl.IsMouseButtonReleased(rl.MouseLeftButton) && a.dragging {
+	if rl.IsMouseButtonReleased(rl.MouseLeftButton) && a.ui.dragging {
 		// Куда отпустили.
 		for i := 0; i < cols*rows; i++ {
 			col := int32(i % cols)
@@ -62,14 +62,14 @@ func (a *App) drawInventory() {
 			cy := gridY + row*cell
 			rect := rl.NewRectangle(float32(cx), float32(cy), float32(cell-2), float32(cell-2))
 			if rl.CheckCollisionPointRec(mouse, rect) {
-				if i != a.dragFrom {
+				if i != a.ui.dragFrom {
 					// Поменять местами.
-					a.invSlots[a.dragFrom], a.invSlots[i] = a.invSlots[i], a.invSlots[a.dragFrom]
+					a.ui.invSlots[a.ui.dragFrom], a.ui.invSlots[i] = a.ui.invSlots[i], a.ui.invSlots[a.ui.dragFrom]
 				}
 				break
 			}
 		}
-		a.dragging = false
+		a.ui.dragging = false
 	}
 
 	for i := 0; i < cols*rows; i++ {
@@ -87,17 +87,17 @@ func (a *App) drawInventory() {
 		rl.DrawRectangleLinesEx(rect, 1, rl.NewColor(70, 70, 90, 255))
 
 		// Рамка выбранного слота.
-		if row == 0 && int(col) == a.selectedSlot {
+		if row == 0 && int(col) == a.ui.selectedSlot {
 			rl.DrawRectangleLinesEx(rect, 3, rl.NewColor(255, 220, 90, 255))
 		}
 
 		// Подсветка слота, если тащим предмет и наводим на этот слот.
-		if a.dragging && rl.CheckCollisionPointRec(mouse, rect) {
+		if a.ui.dragging && rl.CheckCollisionPointRec(mouse, rect) {
 			rl.DrawRectangleLinesEx(rect, 2, rl.NewColor(80, 200, 120, 255))
 			hoveredSlot = i
 		}
 
-		typ := a.invSlots[i]
+		typ := a.ui.invSlots[i]
 		if typ == "" {
 			continue
 		}
@@ -113,8 +113,8 @@ func (a *App) drawInventory() {
 	}
 
 	// Призрак перетаскиваемого предмета под курсором.
-	if a.dragging && a.invSlots[a.dragFrom] != "" {
-		typ := a.invSlots[a.dragFrom]
+	if a.ui.dragging && a.ui.invSlots[a.ui.dragFrom] != "" {
+		typ := a.ui.invSlots[a.ui.dragFrom]
 		col2 := itemColor(typ)
 		gx := int32(mouse.X) - cell/2 + 2
 		gy := int32(mouse.Y) - cell/2 + 2
@@ -125,7 +125,7 @@ func (a *App) drawInventory() {
 	}
 
 	// Tooltip.
-	if hoveredName != "" && !a.dragging {
+	if hoveredName != "" && !a.ui.dragging {
 		tw := fonts.Measure(hoveredName, 16)
 		tx := int32(mouse.X) + 18
 		ty := int32(mouse.Y) + 14
@@ -338,18 +338,18 @@ func (a *App) myHP() int {
 }
 
 func (a *App) heldItem() string {
-	if a.selectedSlot < 0 || a.selectedSlot >= len(a.invSlots) {
+	if a.ui.selectedSlot < 0 || a.ui.selectedSlot >= len(a.ui.invSlots) {
 		return ""
 	}
-	return a.invSlots[a.selectedSlot]
+	return a.ui.invSlots[a.ui.selectedSlot]
 }
 
 func (a *App) syncInvSlots() {
 	inv := a.nc.Inventory()
 
 	// Какие типы уже лежат в слотах.
-	present := make(map[string]bool, len(a.invSlots))
-	for _, t := range a.invSlots {
+	present := make(map[string]bool, len(a.ui.invSlots))
+	for _, t := range a.ui.invSlots {
 		if t != "" {
 			present[t] = true
 		}
@@ -360,9 +360,9 @@ func (a *App) syncInvSlots() {
 		if n <= 0 || present[t] {
 			continue
 		}
-		for i := 0; i < len(a.invSlots); i++ {
-			if a.invSlots[i] == "" {
-				a.invSlots[i] = t
+		for i := 0; i < len(a.ui.invSlots); i++ {
+			if a.ui.invSlots[i] == "" {
+				a.ui.invSlots[i] = t
 				present[t] = true
 				break
 			}
@@ -370,9 +370,9 @@ func (a *App) syncInvSlots() {
 	}
 
 	// Очистить слоты, где предмет пропал.
-	for i, t := range a.invSlots {
+	for i, t := range a.ui.invSlots {
 		if t != "" && inv[t] <= 0 {
-			a.invSlots[i] = ""
+			a.ui.invSlots[i] = ""
 		}
 	}
 }

@@ -42,44 +42,25 @@ type App struct {
 
 	camera rl.Camera3D
 
-	menuNick  string
-	menuAddr  string
-	menuErr   string
-	menuFocus int
-
 	uiTarget  rl.RenderTexture2D
 	uiTargetW int32
 	uiTargetH int32
 
-	cursorCaptured bool
-	quit           bool
-	showInventory  bool
-	showCraft      bool
-	selectedSlot   int
-	projectiles    []projectile
-	startAt        time.Time
+	quit        bool
+	projectiles []projectile
+	startAt     time.Time
 
-	lastSentHeld     string
-	ridingID         string
-	hp               int
-	hpReceived       bool
-	boatID           string
-	contractMobID    string
-	contractPos      rl.Vector3
-	showContract     bool
-	contractOpenedAt time.Time
+	lastSentHeld string
+	ridingID     string
+	hp           int
+	hpReceived   bool
+	boatID       string
 
 	// flightLocked — при открытом UI игрок жёстко привязан к Земле.
 	// Позволяет не «улетать» когда updatePlaying делает early-return.
 	flightLocked       bool
 	flightLockedRelPos protocol.Vector3
 	flightLockedRelVel protocol.Vector3
-	factoryID          string
-	showFactory        bool
-	factoryOpenedAt    time.Time
-	invSlots           [256]string
-	dragging           bool
-	dragFrom           int
 	rocketID           string
 	rocketBoardedAt    time.Time
 	hudRocket          protocol.Rocket
@@ -133,16 +114,19 @@ type App struct {
 	tickRate        float64
 
 	diag DiagState
+	ui   UIState
 }
 
 func New(cfg *config.Config, log *slog.Logger) *App {
 	return &App{
-		hp:       100,
-		cfg:      cfg,
-		log:      log,
-		mode:     state.ModeMenu,
-		menuNick: cfg.Client.Nick,
-		menuAddr: cfg.Client.StartAddr,
+		hp:   100,
+		cfg:  cfg,
+		log:  log,
+		mode: state.ModeMenu,
+		ui: UIState{
+			menuNick: cfg.Client.Nick,
+			menuAddr: cfg.Client.StartAddr,
+		},
 	}
 }
 
@@ -213,10 +197,10 @@ func (a *App) Run() error {
 }
 
 func (a *App) setCursorCaptured(c bool) {
-	if a.cursorCaptured == c {
+	if a.ui.cursorCaptured == c {
 		return
 	}
-	a.cursorCaptured = c
+	a.ui.cursorCaptured = c
 	if c {
 		rl.DisableCursor()
 		midX := rl.GetScreenWidth() / 2

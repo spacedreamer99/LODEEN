@@ -13,21 +13,21 @@ func (a *App) startConnect() {
 	if a.nc.Status() == clientnet.StatusConnected {
 		return
 	}
-	if a.menuNick == "" {
-		a.menuErr = "nick required"
+	if a.ui.menuNick == "" {
+		a.ui.menuErr = "nick required"
 		return
 	}
-	if a.menuAddr == "" {
-		a.menuErr = "server address required"
+	if a.ui.menuAddr == "" {
+		a.ui.menuErr = "server address required"
 		return
 	}
-	a.menuErr = ""
-	a.log.Info("connecting", "addr", a.menuAddr, "nick", a.menuNick)
+	a.ui.menuErr = ""
+	a.log.Info("connecting", "addr", a.ui.menuAddr, "nick", a.ui.menuNick)
 
 	start := time.Now()
-	welcome, err := a.nc.Connect(a.menuAddr, a.menuNick)
+	welcome, err := a.nc.Connect(a.ui.menuAddr, a.ui.menuNick)
 	if err != nil {
-		a.menuErr = "connect failed: " + err.Error()
+		a.ui.menuErr = "connect failed: " + err.Error()
 		a.log.Warn("connect failed", "err", err)
 		return
 	}
