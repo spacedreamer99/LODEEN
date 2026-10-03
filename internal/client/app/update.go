@@ -13,6 +13,21 @@ import (
 )
 
 func (a *App) update(dt float32) {
+	// Проверка телепорта (чит /tp).
+	select {
+	case tp := <-a.nc.Teleport():
+		newPos := rl.NewVector3(tp.X, tp.Y, tp.Z)
+		a.flight.Pos = newPos
+		a.flight.Vel = rl.NewVector3(0, 0, 0)
+		a.flight.RelInit = false
+		a.flight.HelioInit = false
+		a.camSmoothInit = false
+		a.earthPosInit = false
+		a.earthHistory = nil
+		a.log.Info("teleport", "x", tp.X, "y", tp.Y, "z", tp.Z)
+	default:
+	}
+
 	// Синк тел: буферизация по ТИКАМ сервера (не по времени прибытия).
 	// Устраняет джиттер снапшотов при рендере.
 	serverEP := a.nc.EarthPos()
@@ -119,6 +134,10 @@ func (a *App) update(dt float32) {
 	a.earthPos = renderEP
 	a.earthVel = renderEV
 	a.scene.SetEarthPos(a.earthPos)
+
+	// Planet2 — без интерполяции пока (прямо из снапшота).
+	a.planet2Pos = a.nc.Planet2Pos()
+	a.planet2Vel = a.nc.Planet2Vel()
 
 	// Frame spike detection.
 	if dt > 0.05 {

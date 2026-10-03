@@ -11,9 +11,7 @@ import (
 
 func (a *App) drawOrbitMap() {
 	r := a.hudRocket
-	if r.ID == "" {
-		return
-	}
+	haveRocket := r.ID != ""
 
 	const seg = 96
 
@@ -22,15 +20,21 @@ func (a *App) drawOrbitMap() {
 		a.orbitInit = true
 		a.orbitAzimuth = 0.6
 		a.orbitElevation = 0.5
-		dist := r.Altitude * 2.5
-		if r.PrimaryBody == "sun" {
-			dist = protocol.SunDistance * 1.5
+		dist := float32(500.0)
+		if haveRocket {
+			dist = r.Altitude * 2.5
+			if r.PrimaryBody == "sun" {
+				dist = protocol.SunDistance * 1.5
+			}
+		} else {
+			// Пешком — обзор вокруг Земли.
+			dist = protocol.SOIEarth * 2.0
 		}
 		if dist < 200 {
 			dist = 200
 		}
-		if dist > 30000 {
-			dist = 30000
+		if dist > 150000 {
+			dist = 150000
 		}
 		a.orbitDistance = dist
 	}
@@ -39,7 +43,12 @@ func (a *App) drawOrbitMap() {
 	// Позиции в helio-фрейме.
 	sunH := rl.NewVector3(protocol.SunPos.X, protocol.SunPos.Y, protocol.SunPos.Z)
 	earthH := rl.NewVector3(a.earthPos.X, a.earthPos.Y, a.earthPos.Z)
-	rocketH := rl.NewVector3(r.X+a.earthPos.X, r.Y+a.earthPos.Y, r.Z+a.earthPos.Z)
+	star2H := rl.NewVector3(protocol.Star2Pos.X, protocol.Star2Pos.Y, protocol.Star2Pos.Z)
+	planet2H := rl.NewVector3(a.planet2Pos.X, a.planet2Pos.Y, a.planet2Pos.Z)
+	rocketH := earthH // fallback если нет ракеты
+	if haveRocket {
+		rocketH = rl.NewVector3(r.X+a.earthPos.X, r.Y+a.earthPos.Y, r.Z+a.earthPos.Z)
+	}
 
 	var center rl.Vector3
 	switch a.orbitFocus {
@@ -47,10 +56,14 @@ func (a *App) drawOrbitMap() {
 		center = earthH
 	case "sun":
 		center = sunH
+	case "star2":
+		center = star2H
+	case "planet2":
+		center = planet2H
 	case "rocket":
 		center = rocketH
 	default:
-		// Helio-карта: авто всегда на Солнце, чтобы видеть всю систему.
+		// Helio-карта: авто на Солнце, чтобы видеть всю систему.
 		center = sunH
 	}
 
@@ -85,6 +98,23 @@ func (a *App) drawOrbitMap() {
 	rl.BeginMode3D(mapCam)
 	rl.PushMatrix()
 	rl.Scalef(1.0/scale, 1.0/scale, 1.0/scale)
+
+	// ── Плоскость системы 2: сетка вокруг Star2 ──
+	gridCol2 := rl.NewColor(80, 50, 30, 100)
+	const gridStep2 = 500.0
+	gridHalf2 := int(protocol.Planet2OrbitRadius*2/gridStep2) + 2
+	ext2 := float32(gridHalf2) * gridStep2
+	for i := -gridHalf2; i <= gridHalf2; i++ {
+		off := float32(i) * gridStep2
+		rl.DrawLine3D(
+			rl.NewVector3(star2H.X+off, 0, star2H.Z-ext2),
+			rl.NewVector3(star2H.X+off, 0, star2H.Z+ext2),
+			gridCol2)
+		rl.DrawLine3D(
+			rl.NewVector3(star2H.X-ext2, 0, star2H.Z+off),
+			rl.NewVector3(star2H.X+ext2, 0, star2H.Z+off),
+			gridCol2)
+	}
 
 	// ── Плоскость системы: сетка на Y=0, центр в Солнце, размер ±SunDistance*2 ──
 	gridCol := rl.NewColor(40, 60, 90, 100)
@@ -141,6 +171,39 @@ func (a *App) drawOrbitMap() {
 	rl.DrawSphere(sunPos, protocol.SunRadius, rl.NewColor(255, 220, 100, 255))
 	rl.DrawSphereWires(sunPos, protocol.SunRadius, 16, 16, rl.NewColor(255, 180, 60, 220))
 
+	// Star2 — оранжевый карлик.
+	rl.DrawSphere(star2H, protocol.Star2Radius, rl.NewColor(255, 140, 60, 255))
+	rl.DrawSphereWires(star2H, protocol.Star2Radius, 16, 16, rl.NewColor(200, 80, 30, 220))
+
+	// Planet2 — голубая планета.
+	rl.DrawSphere(planet2H, protocol.Planet2Radius, rl.NewColor(80, 180, 200, 255))
+	rl.DrawSphereWires(planet2H, protocol.Planet2Radius, 16, 16, rl.NewColor(40, 120, 160, 220))
+
+	// Орбита Planet2 вокруг Star2 — круг радиусом Planet2OrbitRadius.
+	orbit2Col := rl.NewColor(255, 140, 60, 180)
+	for i := 0; i < seg*2; i++ {
+		a0 := float32(i) * 2 * math.Pi / (seg * 2)
+		a1 := float32(i+1) * 2 * math.Pi / (seg * 2)
+		x0 := star2H.X + protocol.Planet2OrbitRadius*float32(math.Cos(float64(a0)))
+		z0 := star2H.Z + protocol.Planet2OrbitRadius*float32(math.Sin(float64(a0)))
+		x1 := star2H.X + protocol.Planet2OrbitRadius*float32(math.Cos(float64(a1)))
+		z1 := star2H.Z + protocol.Planet2OrbitRadius*float32(math.Sin(float64(a1)))
+		rl.DrawLine3D(rl.NewVector3(x0, 0, z0), rl.NewVector3(x1, 0, z1), orbit2Col)
+		rl.DrawLine3D(rl.NewVector3(x0, 0.5, z0), rl.NewVector3(x1, 0.5, z1), orbit2Col)
+	}
+
+	// SOI Planet2.
+	for i := 0; i < seg; i++ {
+		a0 := float32(i) * 2 * math.Pi / seg
+		a1 := float32(i+1) * 2 * math.Pi / seg
+		x0 := planet2H.X + protocol.SOIPlanet2*float32(math.Cos(float64(a0)))
+		z0 := planet2H.Z + protocol.SOIPlanet2*float32(math.Sin(float64(a0)))
+		x1 := planet2H.X + protocol.SOIPlanet2*float32(math.Cos(float64(a1)))
+		z1 := planet2H.Z + protocol.SOIPlanet2*float32(math.Sin(float64(a1)))
+		rl.DrawLine3D(rl.NewVector3(x0, 0, z0), rl.NewVector3(x1, 0, z1),
+			rl.NewColor(120, 200, 220, 120))
+	}
+
 	// Линия Солнце → Земля (пунктиром). Следит за Землёй.
 	dashCol := rl.NewColor(180, 180, 100, 100)
 	const dashes = 48
@@ -168,94 +231,108 @@ func (a *App) drawOrbitMap() {
 	rl.DrawLine3D(rl.NewVector3(0, 0, 0), rl.NewVector3(0, protocol.PlanetRadius*2, 0), rl.NewColor(50, 120, 50, 180))
 	rl.DrawLine3D(rl.NewVector3(0, 0, 0), rl.NewVector3(0, 0, protocol.PlanetRadius*2), rl.NewColor(50, 50, 120, 180))
 
-	// ── Траектория: прошлое + будущее ──
-	epT := a.earthPos
-	evT := a.earthVel
-	helioPos := protocol.Vector3{X: r.X + epT.X, Y: r.Y + epT.Y, Z: r.Z + epT.Z}
-	helioVel := protocol.Vector3{X: r.VX + evT.X, Y: r.VY + evT.Y, Z: r.VZ + evT.Z}
+	// ── Траектория: только для ракеты ──
+	if haveRocket {
+		epT := a.earthPos
+		evT := a.earthVel
+		helioPos := protocol.Vector3{X: r.X + epT.X, Y: r.Y + epT.Y, Z: r.Z + epT.Z}
+		helioVel := protocol.Vector3{X: r.VX + evT.X, Y: r.VY + evT.Y, Z: r.VZ + evT.Z}
 
-	// Будущее — жёлтое. Только для пилотируемой ракеты (иначе predict
-	// даёт мусор: ракета "стоит" под огромной гравитацией Земли).
-	if r.Piloted {
-		dxe := helioPos.X - epT.X
-		dye := helioPos.Y - epT.Y
-		dze := helioPos.Z - epT.Z
-		relEarth := float32(math.Sqrt(float64(dxe*dxe + dye*dye + dze*dze)))
+		// Будущее — жёлтое. Только для пилотируемой ракеты (иначе predict
+		// даёт мусор: ракета "стоит" под огромной гравитацией Земли).
+		if r.Piloted {
+			dxe := helioPos.X - epT.X
+			dye := helioPos.Y - epT.Y
+			dze := helioPos.Z - epT.Z
+			relEarth := float32(math.Sqrt(float64(dxe*dxe + dye*dye + dze*dze)))
 
-		var dtF float32
-		var stepsF int
-		if relEarth < protocol.SOIEarth {
-			dtF = 0.05
-			stepsF = 6000 // 300 сек — орбита вокруг Земли
-		} else {
-			dtF = 1.0
-			stepsF = 2000 // 2000 сек — полный оборот вокруг Солнца
+			var dtF float32
+			var stepsF int
+			if relEarth < protocol.SOIEarth {
+				dtF = 0.05
+				stepsF = 6000 // 300 сек — орбита вокруг Земли
+			} else {
+				dtF = 1.0
+				stepsF = 2000 // 2000 сек — полный оборот вокруг Солнца
+			}
+			future := predictTrajectory(helioPos, helioVel, epT, evT, dtF, stepsF)
+			futureCol := rl.NewColor(230, 200, 60, 220)
+			for i := 1; i < len(future); i++ {
+				p1 := rl.NewVector3(future[i-1].X, future[i-1].Y, future[i-1].Z)
+				p2 := rl.NewVector3(future[i].X, future[i].Y, future[i].Z)
+				rl.DrawLine3D(p1, p2, futureCol)
+			}
+			if len(future) >= 2 {
+				tip := future[len(future)-1]
+				rl.DrawSphere(rl.NewVector3(tip.X, tip.Y, tip.Z), 6, futureCol)
+				rl.DrawSphereWires(rl.NewVector3(tip.X, tip.Y, tip.Z), 6, 8, 8, rl.White)
+			}
 		}
-		future := predictTrajectory(helioPos, helioVel, epT, evT, dtF, stepsF)
-		futureCol := rl.NewColor(230, 200, 60, 220)
-		for i := 1; i < len(future); i++ {
-			p1 := rl.NewVector3(future[i-1].X, future[i-1].Y, future[i-1].Z)
-			p2 := rl.NewVector3(future[i].X, future[i].Y, future[i].Z)
-			rl.DrawLine3D(p1, p2, futureCol)
-		}
-		if len(future) >= 2 {
-			tip := future[len(future)-1]
-			rl.DrawSphere(rl.NewVector3(tip.X, tip.Y, tip.Z), 6, futureCol)
-			rl.DrawSphereWires(rl.NewVector3(tip.X, tip.Y, tip.Z), 6, 8, 8, rl.White)
-		}
-	}
 
-	// Прошлое — синее. Тоже только для пилотируемой.
-	if r.Piloted {
-		dxe := helioPos.X - epT.X
-		dye := helioPos.Y - epT.Y
-		dze := helioPos.Z - epT.Z
-		relEarth := float32(math.Sqrt(float64(dxe*dxe + dye*dye + dze*dze)))
+		// Прошлое — синее. Тоже только для пилотируемой.
+		if r.Piloted {
+			dxe := helioPos.X - epT.X
+			dye := helioPos.Y - epT.Y
+			dze := helioPos.Z - epT.Z
+			relEarth := float32(math.Sqrt(float64(dxe*dxe + dye*dye + dze*dze)))
 
-		var dtP float32
-		var stepsP int
-		if relEarth < protocol.SOIEarth {
-			dtP = -0.05
-			stepsP = 3000
-		} else {
-			dtP = -1.0
-			stepsP = 1000
+			var dtP float32
+			var stepsP int
+			if relEarth < protocol.SOIEarth {
+				dtP = -0.05
+				stepsP = 3000
+			} else {
+				dtP = -1.0
+				stepsP = 1000
+			}
+			past := predictTrajectory(helioPos, helioVel, epT, evT, dtP, stepsP)
+			pastCol := rl.NewColor(70, 130, 220, 200)
+			for i := 1; i < len(past); i++ {
+				p1 := rl.NewVector3(past[i-1].X, past[i-1].Y, past[i-1].Z)
+				p2 := rl.NewVector3(past[i].X, past[i].Y, past[i].Z)
+				rl.DrawLine3D(p1, p2, pastCol)
+			}
 		}
-		past := predictTrajectory(helioPos, helioVel, epT, evT, dtP, stepsP)
-		pastCol := rl.NewColor(70, 130, 220, 200)
-		for i := 1; i < len(past); i++ {
-			p1 := rl.NewVector3(past[i-1].X, past[i-1].Y, past[i-1].Z)
-			p2 := rl.NewVector3(past[i].X, past[i].Y, past[i].Z)
-			rl.DrawLine3D(p1, p2, pastCol)
+
+	} // конец if haveRocket (траектория)
+
+	// Ракета — только если есть.
+	if haveRocket {
+		rp := rocketH
+		rl.DrawSphere(rp, 4, rl.NewColor(100, 255, 100, 255))
+		rl.DrawSphereWires(rp, 4, 8, 8, rl.White)
+
+		hvx := r.VX + a.earthVel.X
+		hvy := r.VY + a.earthVel.Y
+		hvz := r.VZ + a.earthVel.Z
+		vLen := float32(math.Sqrt(float64(hvx*hvx + hvy*hvy + hvz*hvz)))
+		if vLen > 0.1 {
+			vEnd := rl.NewVector3(
+				rp.X+hvx/vLen*30,
+				rp.Y+hvy/vLen*30,
+				rp.Z+hvz/vLen*30,
+			)
+			rl.DrawLine3D(rp, vEnd, rl.NewColor(255, 80, 80, 255))
 		}
-	}
 
-	// Ракета — в helio.
-	rp := rocketH
-	rl.DrawSphere(rp, 4, rl.NewColor(100, 255, 100, 255))
-	rl.DrawSphereWires(rp, 4, 8, 8, rl.White)
-
-	// Вектор скорости (helio).
-	hvx := r.VX + a.earthVel.X
-	hvy := r.VY + a.earthVel.Y
-	hvz := r.VZ + a.earthVel.Z
-	vLen := float32(math.Sqrt(float64(hvx*hvx + hvy*hvy + hvz*hvz)))
-	if vLen > 0.1 {
-		vEnd := rl.NewVector3(
-			rp.X+hvx/vLen*30,
-			rp.Y+hvy/vLen*30,
-			rp.Z+hvz/vLen*30,
+		upEnd := rl.NewVector3(
+			rp.X+r.DX*15,
+			rp.Y+r.DY*15,
+			rp.Z+r.DZ*15,
 		)
-		rl.DrawLine3D(rp, vEnd, rl.NewColor(255, 80, 80, 255))
+		rl.DrawLine3D(rp, upEnd, rl.NewColor(80, 200, 255, 255))
 	}
 
-	// Up ракеты.
-	upEnd := rl.NewVector3(
-		rp.X+r.DX*15,
-		rp.Y+r.DY*15,
-		rp.Z+r.DZ*15,
-	)
-	rl.DrawLine3D(rp, upEnd, rl.NewColor(80, 200, 255, 255))
+	// Игроки — точки рядом с Землёй.
+	for _, p := range a.nc.InterpolatedSnapshot() {
+		ph := rl.NewVector3(
+			p.X+a.earthPos.X,
+			p.Y+a.earthPos.Y,
+			p.Z+a.earthPos.Z,
+		)
+		rl.DrawSphere(ph, 3, rl.NewColor(255, 220, 80, 255))
+		rl.DrawSphereWires(ph, 3, 6, 6, rl.NewColor(120, 80, 0, 255))
+	}
 
 	rl.PopMatrix()
 	rl.EndMode3D()
@@ -288,6 +365,45 @@ func (a *App) drawOrbitMap() {
 			a.sunScrX = float32(cx)
 			a.sunScrY = float32(cy)
 		}
+	}
+
+	// Star2 — 2D overlay.
+	star2Ov := rl.NewVector3(
+		protocol.Star2Pos.X/scale,
+		protocol.Star2Pos.Y/scale,
+		protocol.Star2Pos.Z/scale,
+	)
+	star2Screen := rl.GetWorldToScreen(star2Ov, mapCam)
+	if star2Screen.X > -200 && star2Screen.X < swF+200 &&
+		star2Screen.Y > -200 && star2Screen.Y < shF+200 {
+		cx := int32(star2Screen.X)
+		cy := int32(star2Screen.Y)
+		rl.DrawCircle(cx, cy, 14, rl.NewColor(255, 140, 60, 255))
+		rl.DrawCircleLines(cx, cy, 14, rl.NewColor(200, 80, 30, 255))
+		rl.DrawCircleLines(cx, cy, 20, rl.NewColor(255, 140, 60, 140))
+		rl.DrawCircleLines(cx, cy, 26, rl.NewColor(255, 140, 60, 80))
+		fonts.Draw("STAR2", cx+18, cy-10, 16, rl.NewColor(255, 140, 60, 255))
+		a.star2ScrX = float32(cx)
+		a.star2ScrY = float32(cy)
+	}
+
+	// Planet2 — 2D overlay.
+	planet2Ov := rl.NewVector3(
+		a.planet2Pos.X/scale,
+		a.planet2Pos.Y/scale,
+		a.planet2Pos.Z/scale,
+	)
+	planet2Screen := rl.GetWorldToScreen(planet2Ov, mapCam)
+	if planet2Screen.X > -200 && planet2Screen.X < swF+200 &&
+		planet2Screen.Y > -200 && planet2Screen.Y < shF+200 {
+		cx := int32(planet2Screen.X)
+		cy := int32(planet2Screen.Y)
+		rl.DrawCircle(cx, cy, 8, rl.NewColor(80, 180, 200, 255))
+		rl.DrawCircleLines(cx, cy, 8, rl.NewColor(40, 120, 160, 255))
+		rl.DrawCircleLines(cx, cy, 12, rl.NewColor(80, 180, 200, 140))
+		fonts.Draw("PLANET2", cx+12, cy-8, 14, rl.NewColor(120, 200, 220, 255))
+		a.planet2ScrX = float32(cx)
+		a.planet2ScrY = float32(cy)
 	}
 
 	// Общие forward-компоненты камеры (для проверки «перед камерой»).
@@ -341,29 +457,31 @@ func (a *App) drawOrbitMap() {
 		}
 	}
 
-	// Ракета — 2D проекция.
-	rocketOv := rl.NewVector3(
-		(r.X+a.earthPos.X)/scale,
-		(r.Y+a.earthPos.Y)/scale,
-		(r.Z+a.earthPos.Z)/scale,
-	)
-	toRX := rocketOv.X - mapCam.Position.X
-	toRY := rocketOv.Y - mapCam.Position.Y
-	toRZ := rocketOv.Z - mapCam.Position.Z
-	if fwdX*toRX+fwdY*toRY+fwdZ*toRZ > 0 {
-		rocketScreen := rl.GetWorldToScreen(rocketOv, mapCam)
-		if rocketScreen.X > -200 && rocketScreen.X < swF+200 &&
-			rocketScreen.Y > -200 && rocketScreen.Y < shF+200 {
-			cx := int32(rocketScreen.X)
-			cy := int32(rocketScreen.Y)
-			rl.DrawCircle(cx, cy, 6, rl.NewColor(80, 220, 100, 255))
-			rl.DrawCircleLines(cx, cy, 6, rl.NewColor(20, 80, 20, 255))
-			rl.DrawCircleLines(cx, cy, 10, rl.NewColor(80, 220, 100, 200))
-			rl.DrawCircleLines(cx, cy, 14, rl.NewColor(80, 220, 100, 100))
-			a.rocketScrX = float32(cx)
-			a.rocketScrY = float32(cy)
+	// Ракета — 2D проекция (только если есть).
+	if haveRocket {
+		rocketOv := rl.NewVector3(
+			(r.X+a.earthPos.X)/scale,
+			(r.Y+a.earthPos.Y)/scale,
+			(r.Z+a.earthPos.Z)/scale,
+		)
+		toRX := rocketOv.X - mapCam.Position.X
+		toRY := rocketOv.Y - mapCam.Position.Y
+		toRZ := rocketOv.Z - mapCam.Position.Z
+		if fwdX*toRX+fwdY*toRY+fwdZ*toRZ > 0 {
+			rocketScreen := rl.GetWorldToScreen(rocketOv, mapCam)
+			if rocketScreen.X > -200 && rocketScreen.X < swF+200 &&
+				rocketScreen.Y > -200 && rocketScreen.Y < shF+200 {
+				cx := int32(rocketScreen.X)
+				cy := int32(rocketScreen.Y)
+				rl.DrawCircle(cx, cy, 6, rl.NewColor(80, 220, 100, 255))
+				rl.DrawCircleLines(cx, cy, 6, rl.NewColor(20, 80, 20, 255))
+				rl.DrawCircleLines(cx, cy, 10, rl.NewColor(80, 220, 100, 200))
+				rl.DrawCircleLines(cx, cy, 14, rl.NewColor(80, 220, 100, 100))
+				a.rocketScrX = float32(cx)
+				a.rocketScrY = float32(cy)
+			}
 		}
-	}
+	} // конец if haveRocket (2D)
 
 	// Оверлей поверх 3D.
 	fonts.Draw("ORBITAL MAP", 30, 30, 28, rl.NewColor(150, 200, 255, 255))
