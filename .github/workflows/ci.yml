@@ -55,7 +55,7 @@ jobs:
         run: go test -race -coverprofile=coverage.out ./...
       - name: coverage summary
         run: go tool cover -func=coverage.out | tail -1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage.out
@@ -76,7 +76,7 @@ jobs:
           sudo apt-get install -y libgl1-mesa-dev libxi-dev libxcursor-dev libxrandr-dev libxinerama-dev libwayland-dev libxkbcommon-dev
       - name: build
         run: mkdir -p bin && make build-server
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: lodeen-server
           path: bin/lodeen-server
