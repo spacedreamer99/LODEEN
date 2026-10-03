@@ -66,8 +66,8 @@ func (s *Server) handlePlaceRocket(c *Client, p protocol.PlaceRocket) {
 	ev := s.world.EarthVel
 
 	id := newID()
-	s.rocketsMu.Lock()
-	s.rockets[id] = &Rocket{
+	s.rockets.Lock()
+	s.rockets.Map()[id] = &Rocket{
 		ID:       id,
 		Pos:      protocol.Vector3{X: ep.X + localPos.X, Y: ep.Y + localPos.Y, Z: ep.Z + localPos.Z},
 		Vel:      ev,
@@ -76,7 +76,7 @@ func (s *Server) handlePlaceRocket(c *Client, p protocol.PlaceRocket) {
 		MaxFuel:  rocketMaxFuel,
 		LocalPos: localPos,
 	}
-	s.rocketsMu.Unlock()
+	s.rockets.Unlock()
 
 	c.mu.Lock()
 	inv := make(map[string]int, len(c.inventory))
@@ -87,22 +87,22 @@ func (s *Server) handlePlaceRocket(c *Client, p protocol.PlaceRocket) {
 	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
 	c.log.Info("rocket placed", "id", id,
 		"local", localPos,
-		"helio", s.rockets[id].Pos,
+		"helio", s.rockets.Map()[id].Pos,
 		"dist", l)
 }
 
 func (s *Server) handleBoardRocket(c *Client, rocketID string) {
 	ps := c.State()
 
-	s.rocketsMu.Lock()
-	r, ok := s.rockets[rocketID]
+	s.rockets.Lock()
+	r, ok := s.rockets.Map()[rocketID]
 	if !ok {
-		s.rocketsMu.Unlock()
+		s.rockets.Unlock()
 		c.log.Warn("rocket: not found")
 		return
 	}
 	if r.Piloted && r.OwnerID != c.ID {
-		s.rocketsMu.Unlock()
+		s.rockets.Unlock()
 		c.log.Warn("rocket: already piloted", "owner", r.OwnerID)
 		return
 	}
@@ -116,7 +116,7 @@ func (s *Server) handleBoardRocket(c *Client, rocketID string) {
 	dy := ry - ps.Y
 	dz := rz - ps.Z
 	if dx*dx+dy*dy+dz*dz > 8.0*8.0 {
-		s.rocketsMu.Unlock()
+		s.rockets.Unlock()
 		c.log.Warn("rocket: too far",
 			"r_geo", []float32{rx, ry, rz},
 			"player", []float32{ps.X, ps.Y, ps.Z},
@@ -125,14 +125,14 @@ func (s *Server) handleBoardRocket(c *Client, rocketID string) {
 	}
 	r.Piloted = true
 	r.OwnerID = c.ID
-	s.rocketsMu.Unlock()
+	s.rockets.Unlock()
 	c.log.Info("rocket boarded", "id", rocketID)
 }
 
 func (s *Server) handleExitRocket(c *Client) {
-	s.rocketsMu.Lock()
-	defer s.rocketsMu.Unlock()
-	for _, r := range s.rockets {
+	s.rockets.Lock()
+	defer s.rockets.Unlock()
+	for _, r := range s.rockets.Map() {
 		if r.OwnerID == c.ID && r.Piloted {
 			r.Piloted = false
 			r.OwnerID = ""
@@ -143,9 +143,9 @@ func (s *Server) handleExitRocket(c *Client) {
 }
 
 func (s *Server) handleRocketInput(c *Client, p protocol.RocketInput) {
-	s.rocketsMu.Lock()
-	defer s.rocketsMu.Unlock()
-	for _, r := range s.rockets {
+	s.rockets.Lock()
+	defer s.rockets.Unlock()
+	for _, r := range s.rockets.Map() {
 		if r.OwnerID == c.ID && r.Piloted {
 			r.Thrust = p.Thrust
 			r.AutoPilot = p.AutoPilot
@@ -166,13 +166,13 @@ func (s *Server) handleRocketInput(c *Client, p protocol.RocketInput) {
 
 // tickRockets — оркестратор: обходит все ракеты и вызывает подходящий тик.
 func (s *Server) tickRockets(dt float32) {
-	s.rocketsMu.Lock()
-	defer s.rocketsMu.Unlock()
+	s.rockets.Lock()
+	defer s.rockets.Unlock()
 
 	ep := s.world.EarthPos
 	ev := s.world.EarthVel
 
-	for _, r := range s.rockets {
+	for _, r := range s.rockets.Map() {
 		if !r.Piloted {
 			tickFreeRocket(r, ep, ev)
 			continue

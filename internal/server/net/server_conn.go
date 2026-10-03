@@ -117,15 +117,15 @@ func (s *Server) unregisterClient(client *Client) {
 	s.mu.Unlock()
 	s.metrics.PlayersConnected.Dec()
 
-	s.rocketsMu.Lock()
-	for _, r := range s.rockets {
+	s.rockets.Lock()
+	for _, r := range s.rockets.Map() {
 		if r.OwnerID == client.ID {
 			r.Piloted = false
 			r.OwnerID = ""
 			r.Thrust = 0
 		}
 	}
-	s.rocketsMu.Unlock()
+	s.rockets.Unlock()
 }
 
 // readLoop читает Envelope'ы до ошибки и передаёт их в handleMessage.

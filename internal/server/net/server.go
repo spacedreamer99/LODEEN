@@ -70,8 +70,7 @@ type Server struct {
 	factoriesMu sync.RWMutex
 	factories   map[string]*Factory
 
-	rocketsMu sync.RWMutex
-	rockets   map[string]*Rocket
+	rockets *store[*Rocket]
 
 	boatsMu sync.RWMutex
 	boats   map[string]*Boat
@@ -111,7 +110,7 @@ func New(addr string, tickRate int, log *slog.Logger, m *Metrics) *Server {
 	s.solar = make(map[string]*Solar)
 	s.batteries = make(map[string]*Battery)
 	s.factories = make(map[string]*Factory)
-	s.rockets = make(map[string]*Rocket)
+	s.rockets = newStore[*Rocket]()
 	s.boats = make(map[string]*Boat)
 	s.mobs = make(map[string]*Mob)
 	s.spawnMobs(5)
