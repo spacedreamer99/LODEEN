@@ -7,7 +7,7 @@ import (
 )
 
 // tickCollector — серый моб идёт к ближайшему ресурсу и подбирает его.
-// Вызывается, когда держится mobsMu.Lock() в tickMobs.
+// Вызывается, когда держится s.mobs.Lock() в tickMobs.
 func (s *Server) tickCollector(m *Mob, dt float32) {
 	// Найти ближайший ресурс.
 	var target *protocol.Resource
