@@ -91,6 +91,22 @@ Launcher сам решает: какой клиент скачать, какие
 | Мониторинг | Prometheus + Grafana + Loki |
 | ОС сервера | AlmaLinux (RHEL-совместимый) |
 
+## Deploy
+
+### Helm
+
+Установка:
+
+    helm install lodeen ./deploy/helm/lodeen -n lodeen --create-namespace -f deploy/helm/lodeen/values-dev.yaml
+
+Prod-оверрайды:
+
+    helm upgrade --install lodeen ./deploy/helm/lodeen -n lodeen -f deploy/helm/lodeen/values-prod.yaml
+
+Чарт в deploy/helm/lodeen/. Параметризован через values-{dev,prod}.yaml: image, resources, probes, NetworkPolicy, PDB, ServiceMonitor.
+
+Старые манифесты в deploy/k8s/ оставлены для справки. Используйте Helm.
+
 ## Принципы
 
 **Безопасность** (из Linux):
@@ -156,7 +172,7 @@ Chain of Trust: каждый link — отдельный акт верифика
 - [x] CI (GitHub Actions: lint, test, build, docker, trivy)
 - [x] Образ в GHCR (публичный)
 - [x] k3d кластер + базовый деплой
-- [ ] Helm-чарт
+- [x] Helm-чарт
 - [ ] ArgoCD (CD)
 - [x] Prometheus + Grafana + дашборд
 - [ ] Terraform + Ansible (VPS)
