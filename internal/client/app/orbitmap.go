@@ -42,12 +42,12 @@ func (a *App) drawOrbitMap() {
 	// Центр карты: orbitFocus или auto (primary body).
 	// Позиции в helio-фрейме.
 	sunH := rl.NewVector3(protocol.SunPos.X, protocol.SunPos.Y, protocol.SunPos.Z)
-	earthH := rl.NewVector3(a.earthPos.X, a.earthPos.Y, a.earthPos.Z)
+	earthH := rl.NewVector3(a.world.earthPos.X, a.world.earthPos.Y, a.world.earthPos.Z)
 	star2H := rl.NewVector3(protocol.Star2Pos.X, protocol.Star2Pos.Y, protocol.Star2Pos.Z)
-	planet2H := rl.NewVector3(a.planet2Pos.X, a.planet2Pos.Y, a.planet2Pos.Z)
+	planet2H := rl.NewVector3(a.world.planet2Pos.X, a.world.planet2Pos.Y, a.world.planet2Pos.Z)
 	rocketH := earthH // fallback если нет ракеты
 	if haveRocket {
-		rocketH = rl.NewVector3(r.X+a.earthPos.X, r.Y+a.earthPos.Y, r.Z+a.earthPos.Z)
+		rocketH = rl.NewVector3(r.X+a.world.earthPos.X, r.Y+a.world.earthPos.Y, r.Z+a.world.earthPos.Z)
 	}
 
 	var center rl.Vector3
@@ -233,8 +233,8 @@ func (a *App) drawOrbitMap() {
 
 	// ── Траектория: только для ракеты ──
 	if haveRocket {
-		epT := a.earthPos
-		evT := a.earthVel
+		epT := a.world.earthPos
+		evT := a.world.earthVel
 		helioPos := protocol.Vector3{X: r.X + epT.X, Y: r.Y + epT.Y, Z: r.Z + epT.Z}
 		helioVel := protocol.Vector3{X: r.VX + evT.X, Y: r.VY + evT.Y, Z: r.VZ + evT.Z}
 
@@ -302,9 +302,9 @@ func (a *App) drawOrbitMap() {
 		rl.DrawSphere(rp, 4, rl.NewColor(100, 255, 100, 255))
 		rl.DrawSphereWires(rp, 4, 8, 8, rl.White)
 
-		hvx := r.VX + a.earthVel.X
-		hvy := r.VY + a.earthVel.Y
-		hvz := r.VZ + a.earthVel.Z
+		hvx := r.VX + a.world.earthVel.X
+		hvy := r.VY + a.world.earthVel.Y
+		hvz := r.VZ + a.world.earthVel.Z
 		vLen := float32(math.Sqrt(float64(hvx*hvx + hvy*hvy + hvz*hvz)))
 		if vLen > 0.1 {
 			vEnd := rl.NewVector3(
@@ -326,9 +326,9 @@ func (a *App) drawOrbitMap() {
 	// Игроки — точки рядом с Землёй.
 	for _, p := range a.nc.InterpolatedSnapshot() {
 		ph := rl.NewVector3(
-			p.X+a.earthPos.X,
-			p.Y+a.earthPos.Y,
-			p.Z+a.earthPos.Z,
+			p.X+a.world.earthPos.X,
+			p.Y+a.world.earthPos.Y,
+			p.Z+a.world.earthPos.Z,
 		)
 		rl.DrawSphere(ph, 3, rl.NewColor(255, 220, 80, 255))
 		rl.DrawSphereWires(ph, 3, 6, 6, rl.NewColor(120, 80, 0, 255))
@@ -389,9 +389,9 @@ func (a *App) drawOrbitMap() {
 
 	// Planet2 — 2D overlay.
 	planet2Ov := rl.NewVector3(
-		a.planet2Pos.X/scale,
-		a.planet2Pos.Y/scale,
-		a.planet2Pos.Z/scale,
+		a.world.planet2Pos.X/scale,
+		a.world.planet2Pos.Y/scale,
+		a.world.planet2Pos.Z/scale,
 	)
 	planet2Screen := rl.GetWorldToScreen(planet2Ov, mapCam)
 	if planet2Screen.X > -200 && planet2Screen.X < swF+200 &&
@@ -412,7 +412,7 @@ func (a *App) drawOrbitMap() {
 	fwdZ := mapCam.Target.Z - mapCam.Position.Z
 
 	// Земля — 2D проекция.
-	earthOv := rl.NewVector3(a.earthPos.X/scale, a.earthPos.Y/scale, a.earthPos.Z/scale)
+	earthOv := rl.NewVector3(a.world.earthPos.X/scale, a.world.earthPos.Y/scale, a.world.earthPos.Z/scale)
 	toEX := earthOv.X - mapCam.Position.X
 	toEY := earthOv.Y - mapCam.Position.Y
 	toEZ := earthOv.Z - mapCam.Position.Z
@@ -460,9 +460,9 @@ func (a *App) drawOrbitMap() {
 	// Ракета — 2D проекция (только если есть).
 	if haveRocket {
 		rocketOv := rl.NewVector3(
-			(r.X+a.earthPos.X)/scale,
-			(r.Y+a.earthPos.Y)/scale,
-			(r.Z+a.earthPos.Z)/scale,
+			(r.X+a.world.earthPos.X)/scale,
+			(r.Y+a.world.earthPos.Y)/scale,
+			(r.Z+a.world.earthPos.Z)/scale,
 		)
 		toRX := rocketOv.X - mapCam.Position.X
 		toRY := rocketOv.Y - mapCam.Position.Y

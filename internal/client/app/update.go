@@ -41,8 +41,8 @@ func (a *App) handleTeleport() {
 		a.flight.RelInit = false
 		a.flight.HelioInit = false
 		a.camSmoothInit = false
-		a.earthPosInit = false
-		a.earthHistory = nil
+		a.world.earthPosInit = false
+		a.world.earthHistory = nil
 		a.log.Info("teleport", "x", tp.X, "y", tp.Y, "z", tp.Z)
 	default:
 	}
@@ -66,9 +66,9 @@ func (a *App) updateEarthHistory(dt float32) {
 	a.advanceRenderTick(dt)
 
 	renderEP, renderEV := a.interpolateEarth(serverEP, serverEV)
-	a.earthPos = renderEP
-	a.earthVel = renderEV
-	a.scene.SetEarthPos(a.earthPos)
+	a.world.earthPos = renderEP
+	a.world.earthVel = renderEV
+	a.scene.SetEarthPos(a.world.earthPos)
 }
 
 // pushEarthSnapshot добавляет снапшот в буфер только при новом тике.
@@ -76,26 +76,26 @@ func (a *App) pushEarthSnapshot(tick uint64, ep, ev protocol.Vector3) {
 	if tick == 0 {
 		return
 	}
-	if len(a.earthHistory) > 0 && tick == a.earthHistory[len(a.earthHistory)-1].tick {
+	if len(a.world.earthHistory) > 0 && tick == a.world.earthHistory[len(a.world.earthHistory)-1].tick {
 		return
 	}
-	a.earthHistory = append(a.earthHistory, earthSnap{
+	a.world.earthHistory = append(a.world.earthHistory, earthSnap{
 		tick: tick,
 		pos:  ep,
 		vel:  ev,
 		at:   time.Now(),
 	})
-	if len(a.earthHistory) > 30 {
-		a.earthHistory = a.earthHistory[len(a.earthHistory)-30:]
+	if len(a.world.earthHistory) > 30 {
+		a.world.earthHistory = a.world.earthHistory[len(a.world.earthHistory)-30:]
 	}
 }
 
 // initRenderTick ставит renderTick на 3 тика назад от последнего (запас для интерполяции).
 func (a *App) initRenderTick() {
-	if a.renderTickInit || len(a.earthHistory) == 0 {
+	if a.renderTickInit || len(a.world.earthHistory) == 0 {
 		return
 	}
-	a.renderTick = float64(a.earthHistory[len(a.earthHistory)-1].tick) - 3.0
+	a.renderTick = float64(a.world.earthHistory[len(a.world.earthHistory)-1].tick) - 3.0
 	a.renderTickInit = true
 }
 
@@ -106,11 +106,11 @@ func (a *App) advanceRenderTick(dt float32) {
 	}
 	a.renderTick += float64(dt) * a.tickRate
 
-	if len(a.earthHistory) < 2 {
+	if len(a.world.earthHistory) < 2 {
 		return
 	}
-	oldest := float64(a.earthHistory[0].tick)
-	newest := float64(a.earthHistory[len(a.earthHistory)-1].tick)
+	oldest := float64(a.world.earthHistory[0].tick)
+	newest := float64(a.world.earthHistory[len(a.world.earthHistory)-1].tick)
 	if a.renderTick < oldest {
 		a.renderTick = oldest
 	}
@@ -121,11 +121,11 @@ func (a *App) advanceRenderTick(dt float32) {
 
 // interpolateEarth возвращает позицию и скорость Земли для текущего renderTick.
 func (a *App) interpolateEarth(fallbackEP, fallbackEV protocol.Vector3) (protocol.Vector3, protocol.Vector3) {
-	if len(a.earthHistory) == 0 {
+	if len(a.world.earthHistory) == 0 {
 		return fallbackEP, fallbackEV
 	}
-	if len(a.earthHistory) == 1 {
-		return a.earthHistory[0].pos, a.earthHistory[0].vel
+	if len(a.world.earthHistory) == 1 {
+		return a.world.earthHistory[0].pos, a.world.earthHistory[0].vel
 	}
 
 	s1, s2 := a.findEarthSurrounding()
@@ -162,18 +162,18 @@ func (a *App) interpolateEarth(fallbackEP, fallbackEV protocol.Vector3) (protoco
 // findEarthSurrounding находит два снапшота вокруг renderTick.
 func (a *App) findEarthSurrounding() (*earthSnap, *earthSnap) {
 	var s1, s2 *earthSnap
-	for i := range a.earthHistory {
-		if float64(a.earthHistory[i].tick) <= a.renderTick {
-			s1 = &a.earthHistory[i]
-			if i+1 < len(a.earthHistory) {
-				s2 = &a.earthHistory[i+1]
+	for i := range a.world.earthHistory {
+		if float64(a.world.earthHistory[i].tick) <= a.renderTick {
+			s1 = &a.world.earthHistory[i]
+			if i+1 < len(a.world.earthHistory) {
+				s2 = &a.world.earthHistory[i+1]
 			}
 		}
 	}
 	if s1 == nil {
-		s1 = &a.earthHistory[0]
-		if len(a.earthHistory) > 1 {
-			s2 = &a.earthHistory[1]
+		s1 = &a.world.earthHistory[0]
+		if len(a.world.earthHistory) > 1 {
+			s2 = &a.world.earthHistory[1]
 		}
 	}
 	return s1, s2
@@ -182,8 +182,8 @@ func (a *App) findEarthSurrounding() (*earthSnap, *earthSnap) {
 // --- Planet2 ---
 
 func (a *App) updatePlanet2() {
-	a.planet2Pos = a.nc.Planet2Pos()
-	a.planet2Vel = a.nc.Planet2Vel()
+	a.world.planet2Pos = a.nc.Planet2Pos()
+	a.world.planet2Vel = a.nc.Planet2Vel()
 }
 
 // --- Debug keys + chat ---
@@ -218,8 +218,8 @@ func (a *App) updatePausePhysics() {
 		return
 	}
 
-	a.flight.EarthPos = rl.NewVector3(a.earthPos.X, a.earthPos.Y, a.earthPos.Z)
-	a.flight.EarthVel = rl.NewVector3(a.earthVel.X, a.earthVel.Y, a.earthVel.Z)
+	a.flight.EarthPos = rl.NewVector3(a.world.earthPos.X, a.world.earthPos.Y, a.world.earthPos.Z)
+	a.flight.EarthVel = rl.NewVector3(a.world.earthVel.X, a.world.earthVel.Y, a.world.earthVel.Z)
 
 	// Гравитация + коллизия — персонаж падает на грунт, не висит в воздухе.
 	a.flight.TickPhysicsOnly(rl.GetFrameTime())
@@ -270,8 +270,8 @@ func (a *App) updateDiag(dt float32) {
 	a.log.Info("DIAG",
 		"flightPos", fmt.Sprintf("%.4f,%.4f,%.4f", a.flight.Pos.X, a.flight.Pos.Y, a.flight.Pos.Z),
 		"camPos", fmt.Sprintf("%.4f,%.4f,%.4f", a.camSmoothPos.X, a.camSmoothPos.Y, a.camSmoothPos.Z),
-		"earthPos", fmt.Sprintf("%.4f,%.4f,%.4f", a.earthPos.X, a.earthPos.Y, a.earthPos.Z),
-		"earthVel", fmt.Sprintf("%.5f,%.5f,%.5f", a.earthVel.X, a.earthVel.Y, a.earthVel.Z),
+		"earthPos", fmt.Sprintf("%.4f,%.4f,%.4f", a.world.earthPos.X, a.world.earthPos.Y, a.world.earthPos.Z),
+		"earthVel", fmt.Sprintf("%.5f,%.5f,%.5f", a.world.earthVel.X, a.world.earthVel.Y, a.world.earthVel.Z),
 		"rel", fmt.Sprintf("%.4f,%.4f,%.4f", rel.X, rel.Y, rel.Z),
 		"relLen", fmt.Sprintf("%.4f", rl.Vector3Length(rel)),
 		"vel", fmt.Sprintf("%.4f,%.4f,%.4f", a.flight.Vel.X, a.flight.Vel.Y, a.flight.Vel.Z),
@@ -315,14 +315,14 @@ func (a *App) updatePaused() {
 func (a *App) exitPause() {
 	if a.flight != nil && a.flight.HelioInit {
 		a.flight.Vel = rl.NewVector3(
-			a.earthVel.X+a.pausedRelVel.X,
-			a.earthVel.Y+a.pausedRelVel.Y,
-			a.earthVel.Z+a.pausedRelVel.Z,
+			a.world.earthVel.X+a.pausedRelVel.X,
+			a.world.earthVel.Y+a.pausedRelVel.Y,
+			a.world.earthVel.Z+a.pausedRelVel.Z,
 		)
 		a.log.Info("PAUSE EXITED",
-			"earth", fmt.Sprintf("%.2f,%.2f,%.2f", a.earthPos.X, a.earthPos.Y, a.earthPos.Z),
+			"earth", fmt.Sprintf("%.2f,%.2f,%.2f", a.world.earthPos.X, a.world.earthPos.Y, a.world.earthPos.Z),
 			"flightPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.flight.Pos.X, a.flight.Pos.Y, a.flight.Pos.Z),
-			"expectedPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.earthPos.X+a.pausedRelPos.X, a.earthPos.Y+a.pausedRelPos.Y, a.earthPos.Z+a.pausedRelPos.Z),
+			"expectedPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.world.earthPos.X+a.pausedRelPos.X, a.world.earthPos.Y+a.pausedRelPos.Y, a.world.earthPos.Z+a.pausedRelPos.Z),
 			"flightVel", fmt.Sprintf("%.3f,%.3f,%.3f", a.flight.Vel.X, a.flight.Vel.Y, a.flight.Vel.Z))
 	}
 	a.mode = state.ModePlaying
