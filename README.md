@@ -1,6 +1,6 @@
 # LODEEN
 
-**Федеративная платформа для кооперативного мультиплеера на Go.**
+📄 **[DevOps Portfolio](docs/PORTFOLIO.md)** | **Федеративная платформа для кооперативного мультиплеера на Go.**
 
 PvE-фокус. Open Source (Apache 2.0). Chain of Trust. Opt-in discovery.
 
