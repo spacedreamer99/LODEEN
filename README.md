@@ -128,6 +128,22 @@ Prod-оверрайды:
 
 ![ArgoCD LODEEN](docs/img/argocd-lodeen.png)
 
+## Infrastructure as Code
+
+Готовые скелеты для развёртывания на VPS. Запуск — когда появится сервер.
+
+- **Terraform**: `deploy/terraform-clo/` (FirstVDS) и `deploy/terraform-yc/` (Yandex Cloud)
+- **Ansible**: `deploy/ansible/` — playbook `bootstrap.yml` ставит k3s + ArgoCD + Application
+- **Runbook**: `docs/DEPLOY.md` — пошагово от VPS до рабочего кластера
+
+Когда VPS готов:
+
+    cd deploy/terraform-clo
+    terraform apply
+    cd ../ansible && ansible-playbook playbooks/bootstrap.yml
+
+Через 10 минут: k3s + ArgoCD + LODEEN задеплоены через GitOps.
+
 ## Принципы
 
 **Безопасность** (из Linux):
@@ -196,7 +212,7 @@ Chain of Trust: каждый link — отдельный акт верифика
 - [x] Helm-чарт
 - [x] ArgoCD (CD) — GitOps
 - [x] Prometheus + Grafana + дашборд
-- [ ] Terraform + Ansible (VPS)
+- [~] Terraform + Ansible (скелеты готовы, ждём VPS)
 
 ## Лицензия
 
