@@ -22,7 +22,7 @@ func dispatch[T any](h func(s *Server, c *Client, p T)) msgHandler {
 
 // messageHandlers — таблица маршрутизации по типу входящего сообщения.
 // Регистрируем здесь ВСЕ поддерживаемые типы: name→handler.
-var messageHandlers = map[string]msgHandler{
+var messageHandlers = map[protocol.Type]msgHandler{
 	// Специальные (нестандартная логика).
 	protocol.TypeState:      handleStateMsg,
 	protocol.TypeChat:       handleChatMsg,
