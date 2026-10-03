@@ -24,8 +24,9 @@ Prometheus rules, GitHub Actions CI.
 | `server/net/snapshot.go:broadcastSnapshot` | 203 строки = весь файл | 15-строчный оркестратор + 12 `collectXxx` | `8c1df68` |
 | `client/app/update_playing.go` | 742 строки в одном файле | 6 файлов по доменам, max 185 строк | `cbcd1a5` |
 | `shared/protocol/messages.go` | 400+ строк, 50 типов вперемешку | 6 файлов по доменам | `068f108` |
+| `server/net/mobs.go` | 824 строки, 14 функций + 4 блока AI | 5 файлов по AI-домену | `15a7d87` |
 
-Итого: ~2500 строк кода переразложено. Ни одной новой функции с логикой —
+Итого: ~3300 строк кода переразложено. Ни одной новой функции с логикой —
 только extract, rename и группировка.
 
 ## Приёмы
@@ -121,9 +122,7 @@ GitHub Actions (`.github/workflows/ci.yml`) прогоняет на push:
 
 ## Что дальше
 
-1. `server/net/mobs.go` — 825 строк, `tickProjectiles` 139 + `handleHitMob` 100
-   + `tickMobs` 95. Тот же подход, что с `rockets.go`.
-2. Тесты — начать с `shared/protocol` (кодек) и `server/net` (физика ракет).
+1. Тесты — начать с `shared/protocol` (кодек) и `server/net` (физика ракет).
 3. CI: добавить `golangci-lint` + `-race`.
 4. Уменьшить когнитивную сложность `rockets_tick.go`.
 
