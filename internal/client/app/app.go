@@ -15,7 +15,6 @@ import (
 	"github.com/spacedreamer99/lodeen/internal/client/render"
 	"github.com/spacedreamer99/lodeen/internal/client/state"
 	"github.com/spacedreamer99/lodeen/internal/shared/config"
-	"github.com/spacedreamer99/lodeen/internal/shared/protocol"
 )
 
 const (
@@ -40,19 +39,8 @@ type App struct {
 	scene  *render.Scene
 	chat   *chat.Chat
 
-	uiTarget  rl.RenderTexture2D
-	uiTargetW int32
-	uiTargetH int32
-
 	quit    bool
 	startAt time.Time
-
-	pausedRelPos protocol.Vector3
-	pausedRelVel protocol.Vector3
-
-	unfocusFreeze bool
-	unfocusRelPos protocol.Vector3
-	unfocusRelVel protocol.Vector3
 
 	diag   DiagState
 	ui     UIState
@@ -61,6 +49,8 @@ type App struct {
 	player PlayerState
 	orbit  OrbitState
 	rocket RocketState
+	pause  PauseState
+	render RenderTarget
 }
 
 func New(cfg *config.Config, log *slog.Logger) *App {
