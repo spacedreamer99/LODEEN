@@ -1,6 +1,7 @@
 package app
 
 import (
+	"math"
 	"time"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
@@ -83,8 +84,32 @@ func segSphereHit(a, b, c rl.Vector3, r float32) bool {
 }
 
 func (a *App) drawProjectiles() {
+	shaftCol := rl.NewColor(140, 100, 60, 255)
+	tipCol := rl.NewColor(220, 220, 200, 255)
+
 	for _, p := range a.projectiles {
-		rl.DrawSphere(p.pos, 0.4, rl.NewColor(255, 220, 60, 255))
-		rl.DrawSphereWires(p.pos, 0.4, 12, 12, rl.NewColor(180, 140, 20, 255))
+		dir := rl.Vector3Normalize(p.dir)
+		yaw := float32(math.Atan2(float64(dir.X), float64(dir.Z))) * 180 / math.Pi
+		pitch := -float32(math.Asin(float64(dir.Y))) * 180 / math.Pi
+
+		rl.PushMatrix()
+		rl.Translatef(p.pos.X, p.pos.Y, p.pos.Z)
+		rl.Rotatef(yaw, 0, 1, 0)
+		rl.Rotatef(pitch, 1, 0, 0)
+
+		// Древко (цилиндр вдоль +Z).
+		rl.PushMatrix()
+		rl.Rotatef(90, 1, 0, 0)
+		rl.DrawCylinder(rl.NewVector3(0, 0, 0), 0.025, 0.025, 1.0, 8, shaftCol)
+		rl.PopMatrix()
+
+		// Наконечник — конус.
+		rl.PushMatrix()
+		rl.Translatef(0, 0, 0.6)
+		rl.Rotatef(-90, 1, 0, 0)
+		rl.DrawCylinder(rl.NewVector3(0, 0, 0), 0.06, 0.001, 0.25, 8, tipCol)
+		rl.PopMatrix()
+
+		rl.PopMatrix()
 	}
 }

@@ -27,3 +27,5 @@ res/*.png~
 *.bak_*
 *.bak
 deploy/ansible/inventory/hosts.ini
+*.bak*
+*.dupfix
