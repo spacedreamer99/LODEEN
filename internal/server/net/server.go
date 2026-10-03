@@ -29,6 +29,9 @@ type Metrics struct {
 	PlayersConnected prometheus.Gauge
 	TicksTotal       prometheus.Counter
 	ChatMessages     prometheus.Counter
+	TickDuration     prometheus.Histogram
+	SnapshotBytes    prometheus.Histogram
+	RTTSeconds       prometheus.Histogram
 }
 
 type Server struct {
@@ -332,6 +335,9 @@ func (s *Server) tickLoop() {
 
 		s.tick++
 		s.metrics.TicksTotal.Inc()
+
+		tickStart := time.Now()
+
 		s.tickHunger(dt)
 		s.tickMammoths(dtF)
 		s.tickBoats()
@@ -343,6 +349,8 @@ func (s *Server) tickLoop() {
 		s.world.Tick(dtF)
 		s.tickRockets(dtF)
 		s.broadcastSnapshot()
+
+		s.metrics.TickDuration.Observe(time.Since(tickStart).Seconds())
 
 		// Следующий тик.
 		next = next.Add(tickDur)
