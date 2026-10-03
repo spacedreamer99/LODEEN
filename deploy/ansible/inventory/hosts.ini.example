@@ -1,0 +1,11 @@
+# Copy to hosts.ini after `terraform apply` (или после покупки VPS).
+# Вставь IP сервера и путь к приватному SSH-ключу.
+
+[lodeen]
+# <IP> ansible_user=root
+# Пример:
+# 203.0.113.10 ansible_user=root
+
+[lodeen:vars]
+ansible_ssh_private_key_file=~/.ssh/id_ed25519
+ansible_python_interpreter=/usr/bin/python3

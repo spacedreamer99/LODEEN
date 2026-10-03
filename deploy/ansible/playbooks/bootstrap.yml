@@ -1,0 +1,18 @@
+---
+# Bootstrap LODEEN production host:
+#   1. common: базовые пакеты, firewall, SSH-hardening
+#   2. k3s:    lightweight Kubernetes (server-only, без agents)
+#   3. argocd: ArgoCD bootstrap + LODEEN Application
+#
+# Запуск:
+#   ansible-playbook playbooks/bootstrap.yml
+
+- name: Bootstrap LODEEN production server
+  hosts: lodeen
+  become: true
+  gather_facts: true
+
+  roles:
+    - common
+    - k3s
+    - argocd
