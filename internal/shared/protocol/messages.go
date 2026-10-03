@@ -86,6 +86,7 @@ type PlayerState struct {
 	Pitch  float32 `json:"pitch"`
 	Hunger float32 `json:"hunger"`
 	HP     int     `json:"hp"`
+	RTTms  int32   `json:"rtt_ms,omitempty"`
 }
 
 type Resource struct {
