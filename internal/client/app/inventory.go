@@ -318,12 +318,12 @@ func (a *App) drawHeldItem() {
 	col := itemColor(typ)
 
 	// Локальные оси камеры
-	fw := rl.Vector3Normalize(rl.Vector3Subtract(a.camera.Target, a.camera.Position))
-	right := rl.Vector3Normalize(rl.Vector3CrossProduct(fw, a.camera.Up))
+	fw := rl.Vector3Normalize(rl.Vector3Subtract(a.camera.camera.Target, a.camera.camera.Position))
+	right := rl.Vector3Normalize(rl.Vector3CrossProduct(fw, a.camera.camera.Up))
 	up := rl.Vector3Normalize(rl.Vector3CrossProduct(right, fw))
 
 	// Позиция в правом нижнем углу, чуть впереди
-	pos := a.camera.Position
+	pos := a.camera.camera.Position
 	pos = rl.Vector3Add(pos, rl.Vector3Scale(fw, 0.7))
 	pos = rl.Vector3Add(pos, rl.Vector3Scale(right, 0.4))
 	pos = rl.Vector3Subtract(pos, rl.Vector3Scale(up, 0.35))

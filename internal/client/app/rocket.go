@@ -76,7 +76,7 @@ func (a *App) updatePilotedRocket(dt float32) bool {
 
 	// WASD — вращение носа ракеты в локальной системе камеры.
 	{
-		upLocal := a.camera.Up
+		upLocal := a.camera.camera.Up
 		fwLocal := a.flight.Forward()
 		rightLocal := rl.Vector3Normalize(rl.Vector3CrossProduct(fwLocal, upLocal))
 		upTrue := rl.Vector3Normalize(rl.Vector3CrossProduct(rightLocal, fwLocal))
@@ -159,9 +159,9 @@ func (a *App) updatePilotedRocket(dt float32) bool {
 
 	// Камера следует за ракетой.
 	fw := a.flight.Forward()
-	a.camera.Position = a.flight.Pos
-	a.camera.Target = rl.Vector3Add(a.flight.Pos, rl.Vector3Scale(fw, 100.0))
-	a.camera.Up = a.flight.CameraUp()
+	a.camera.camera.Position = a.flight.Pos
+	a.camera.camera.Target = rl.Vector3Add(a.flight.Pos, rl.Vector3Scale(fw, 100.0))
+	a.camera.camera.Up = a.flight.CameraUp()
 
 	a.log.Info("rocket pilot tick",
 		"id", a.rocketID,

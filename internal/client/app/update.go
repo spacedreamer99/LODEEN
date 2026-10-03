@@ -40,7 +40,7 @@ func (a *App) handleTeleport() {
 		a.flight.Vel = rl.NewVector3(0, 0, 0)
 		a.flight.RelInit = false
 		a.flight.HelioInit = false
-		a.camSmoothInit = false
+		a.camera.camSmoothInit = false
 		a.world.earthPosInit = false
 		a.world.earthHistory = nil
 		a.log.Info("teleport", "x", tp.X, "y", tp.Y, "z", tp.Z)
@@ -57,8 +57,8 @@ func (a *App) updateEarthHistory(dt float32) {
 	serverEV := a.nc.EarthVel()
 	serverTick := a.nc.LastSnapshotTick()
 
-	if a.tickRate == 0 {
-		a.tickRate = 20.0
+	if a.camera.tickRate == 0 {
+		a.camera.tickRate = 20.0
 	}
 
 	a.pushEarthSnapshot(serverTick, serverEP, serverEV)
@@ -92,30 +92,30 @@ func (a *App) pushEarthSnapshot(tick uint64, ep, ev protocol.Vector3) {
 
 // initRenderTick ставит renderTick на 3 тика назад от последнего (запас для интерполяции).
 func (a *App) initRenderTick() {
-	if a.renderTickInit || len(a.world.earthHistory) == 0 {
+	if a.camera.renderTickInit || len(a.world.earthHistory) == 0 {
 		return
 	}
-	a.renderTick = float64(a.world.earthHistory[len(a.world.earthHistory)-1].tick) - 3.0
-	a.renderTickInit = true
+	a.camera.renderTick = float64(a.world.earthHistory[len(a.world.earthHistory)-1].tick) - 3.0
+	a.camera.renderTickInit = true
 }
 
 // advanceRenderTick продвигает renderTick и клэмпит его в границах буфера.
 func (a *App) advanceRenderTick(dt float32) {
-	if !a.renderTickInit {
+	if !a.camera.renderTickInit {
 		return
 	}
-	a.renderTick += float64(dt) * a.tickRate
+	a.camera.renderTick += float64(dt) * a.camera.tickRate
 
 	if len(a.world.earthHistory) < 2 {
 		return
 	}
 	oldest := float64(a.world.earthHistory[0].tick)
 	newest := float64(a.world.earthHistory[len(a.world.earthHistory)-1].tick)
-	if a.renderTick < oldest {
-		a.renderTick = oldest
+	if a.camera.renderTick < oldest {
+		a.camera.renderTick = oldest
 	}
-	if a.renderTick > newest-1.0 {
-		a.renderTick = newest - 1.0
+	if a.camera.renderTick > newest-1.0 {
+		a.camera.renderTick = newest - 1.0
 	}
 }
 
@@ -139,7 +139,7 @@ func (a *App) interpolateEarth(fallbackEP, fallbackEV protocol.Vector3) (protoco
 	span := float64(s2.tick - s1.tick)
 	t := 0.0
 	if span > 0 {
-		t = (a.renderTick - float64(s1.tick)) / span
+		t = (a.camera.renderTick - float64(s1.tick)) / span
 	}
 	if t < 0 {
 		t = 0
@@ -163,7 +163,7 @@ func (a *App) interpolateEarth(fallbackEP, fallbackEV protocol.Vector3) (protoco
 func (a *App) findEarthSurrounding() (*earthSnap, *earthSnap) {
 	var s1, s2 *earthSnap
 	for i := range a.world.earthHistory {
-		if float64(a.world.earthHistory[i].tick) <= a.renderTick {
+		if float64(a.world.earthHistory[i].tick) <= a.camera.renderTick {
 			s1 = &a.world.earthHistory[i]
 			if i+1 < len(a.world.earthHistory) {
 				s2 = &a.world.earthHistory[i+1]
@@ -238,9 +238,9 @@ func (a *App) updatePausePhysics() {
 
 	// Камера едет с Землёй.
 	fw := a.flight.Forward()
-	a.camera.Position = a.flight.Pos
-	a.camera.Target = rl.Vector3Add(a.flight.Pos, rl.Vector3Scale(fw, 100.0))
-	a.camera.Up = a.flight.CameraUp()
+	a.camera.camera.Position = a.flight.Pos
+	a.camera.camera.Target = rl.Vector3Add(a.flight.Pos, rl.Vector3Scale(fw, 100.0))
+	a.camera.camera.Up = a.flight.CameraUp()
 }
 
 // --- Dispatch по режиму ---
@@ -269,13 +269,13 @@ func (a *App) updateDiag(dt float32) {
 	rel := rl.Vector3Subtract(a.flight.Pos, a.earthPosAsRl())
 	a.log.Info("DIAG",
 		"flightPos", fmt.Sprintf("%.4f,%.4f,%.4f", a.flight.Pos.X, a.flight.Pos.Y, a.flight.Pos.Z),
-		"camPos", fmt.Sprintf("%.4f,%.4f,%.4f", a.camSmoothPos.X, a.camSmoothPos.Y, a.camSmoothPos.Z),
+		"camPos", fmt.Sprintf("%.4f,%.4f,%.4f", a.camera.camSmoothPos.X, a.camera.camSmoothPos.Y, a.camera.camSmoothPos.Z),
 		"earthPos", fmt.Sprintf("%.4f,%.4f,%.4f", a.world.earthPos.X, a.world.earthPos.Y, a.world.earthPos.Z),
 		"earthVel", fmt.Sprintf("%.5f,%.5f,%.5f", a.world.earthVel.X, a.world.earthVel.Y, a.world.earthVel.Z),
 		"rel", fmt.Sprintf("%.4f,%.4f,%.4f", rel.X, rel.Y, rel.Z),
 		"relLen", fmt.Sprintf("%.4f", rl.Vector3Length(rel)),
 		"vel", fmt.Sprintf("%.4f,%.4f,%.4f", a.flight.Vel.X, a.flight.Vel.Y, a.flight.Vel.Z),
-		"renderTick", fmt.Sprintf("%.4f", a.renderTick),
+		"renderTick", fmt.Sprintf("%.4f", a.camera.renderTick),
 		"dt", fmt.Sprintf("%.5f", dt))
 	if a.diag.diagFrames == 0 {
 		a.log.Info("DIAG END")
