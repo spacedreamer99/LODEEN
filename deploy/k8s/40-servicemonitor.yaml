@@ -1,0 +1,22 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: lodeen-server
+  namespace: lodeen
+  labels:
+    # Важно: Prometheus Operator из kube-prometheus-stack
+    # ищет ServiceMonitor'ы с лейблом release=<release-name>.
+    # У нас release=kps — имя helm-релиза.
+    release: kps
+spec:
+  selector:
+    matchLabels:
+      app: lodeen-server
+  namespaceSelector:
+    matchNames:
+      - lodeen
+  endpoints:
+    - port: admin
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
