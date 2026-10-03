@@ -107,6 +107,27 @@ Prod-оверрайды:
 
 Старые манифесты в deploy/k8s/ оставлены для справки. Используйте Helm.
 
+## GitOps
+
+Развёртывание через ArgoCD. Git — источник правды, кластер синхронизируется сам.
+
+- Application: `deploy/argocd/application.yaml`
+- Чарт: `deploy/helm/lodeen/`
+- Sync policy: automated + prune + selfHeal
+- Реакция на drift: ArgoCD пересоздаёт удалённые ресурсы
+
+Установка:
+
+    kubectl apply -f deploy/argocd/application.yaml
+
+### Демонстрация selfHeal
+
+    kubectl -n lodeen delete deployment lodeen
+    sleep 15
+    kubectl -n lodeen get deployment   # восстановлен ArgoCD
+
+![ArgoCD LODEEN](docs/img/argocd-lodeen.png)
+
 ## Принципы
 
 **Безопасность** (из Linux):
@@ -173,7 +194,7 @@ Chain of Trust: каждый link — отдельный акт верифика
 - [x] Образ в GHCR (публичный)
 - [x] k3d кластер + базовый деплой
 - [x] Helm-чарт
-- [ ] ArgoCD (CD)
+- [x] ArgoCD (CD) — GitOps
 - [x] Prometheus + Grafana + дашборд
 - [ ] Terraform + Ansible (VPS)
 
