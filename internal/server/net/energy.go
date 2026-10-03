@@ -112,7 +112,7 @@ var factoryRecipes = map[string]factoryRecipe{
 	"rocket":  {need: map[string]int{"circuit": 3, "steel": 5, "gear": 2}, energy: 500, out: "rocket", outQty: 1},
 }
 
-// nearestBatteryLocked ищет ближайшую батарею (без блокировки — вызывать под batteriesMu.Lock).
+// nearestBatteryLocked ищет ближайшую батарею (без блокировки — вызывать под s.batteries.Lock).
 func (s *Server) nearestBatteryLocked(pos protocol.Vector3) *Battery {
 	var best *Battery
 	bestD2 := float32(energyLinkRadiusD2)

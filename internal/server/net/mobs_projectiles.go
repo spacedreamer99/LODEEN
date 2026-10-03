@@ -13,7 +13,7 @@ func (s *Server) tickProjectiles(dt float32) {
 	const projTTL = 3 * time.Second
 	const projHitD2 = 1.5 * 1.5
 
-	// Снимок мобов ДО projMu — иначе deadlock с tickMobs.
+	// Снимок мобов ДО s.projectiles.Lock() — иначе deadlock с tickMobs.
 	s.mobs.RLock()
 	mobPos := make(map[string]protocol.Vector3, len(s.mobs.Map()))
 	for id, mo := range s.mobs.Map() {

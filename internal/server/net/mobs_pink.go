@@ -8,7 +8,7 @@ import (
 )
 
 // tickPink — розовый мирный моб. Убегает от серых и красных, но не от игрока.
-// Вызывается при удержании mobsMu.Lock() в tickMobs.
+// Вызывается при удержании s.mobs.Lock() в tickMobs.
 const pinkFleeD2 = 15.0 * 15.0
 const pinkPanicD2 = 8.0 * 8.0
 const pinkSpeed = 6.0
