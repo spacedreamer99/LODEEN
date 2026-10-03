@@ -2,11 +2,11 @@ package render
 
 import (
 	"math"
+	"math/rand"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
 )
 
-// Диагностика: 10 ярких звёзд в известных направлениях.
 type skyStar struct {
 	dir   rl.Vector3
 	color rl.Color
@@ -16,14 +16,58 @@ type skyStar struct {
 var skyStars []skyStar
 var skyInit bool
 
+type spectralClass struct {
+	color   rl.Color
+	weight  float32
+	sizeMin float32
+	sizeMax float32
+}
+
+var spectralClasses = []spectralClass{
+	{rl.NewColor(155, 176, 255, 255), 0.00003, 5.0, 6.0}, // O
+	{rl.NewColor(170, 191, 255, 255), 0.0013, 4.5, 5.5},  // B
+	{rl.NewColor(202, 215, 255, 255), 0.006, 4.0, 4.8},   // A
+	{rl.NewColor(248, 247, 255, 255), 0.03, 3.5, 4.2},    // F
+	{rl.NewColor(255, 244, 234, 255), 0.076, 3.2, 3.8},   // G
+	{rl.NewColor(255, 210, 161, 255), 0.121, 2.8, 3.4},   // K
+	{rl.NewColor(255, 180, 120, 255), 0.765, 2.4, 3.0},   // M
+}
+
 func initSkybox() {
-	const total = 10
+	rng := rand.New(rand.NewSource(42))
+	const total = 1200
+
 	for i := 0; i < total; i++ {
-		angle := float64(i) * 2 * 3.14159265 / float64(total)
+		r := rng.Float32()
+		var cum float32
+		var cls spectralClass
+		found := false
+		for _, c := range spectralClasses {
+			cum += c.weight
+			if r <= cum {
+				cls = c
+				found = true
+				break
+			}
+		}
+		if !found {
+			cls = spectralClasses[len(spectralClasses)-1]
+		}
+
+		u := rng.Float32()
+		v := rng.Float32()
+		z := 2*u - 1
+		theta := 2 * math.Pi * v
+		rxy := float32(math.Sqrt(float64(1 - z*z)))
+		x := rxy * float32(math.Cos(float64(theta)))
+		y := rxy * float32(math.Sin(float64(theta)))
+
+		size := cls.sizeMin + rng.Float32()*(cls.sizeMax-cls.sizeMin)
+
 		skyStars = append(skyStars, skyStar{
-			dir:   rl.NewVector3(float32(math.Cos(angle)), 0, float32(math.Sin(angle))),
-			color: rl.NewColor(255, 255, 255, 255),
-			size:  8.0,
+			dir:   rl.NewVector3(x, z, y),
+			color: cls.color,
+			size:  size,
 		})
 	}
 }
@@ -34,11 +78,8 @@ func DrawSkybox(cam rl.Camera3D, screenW, screenH int32) {
 		skyInit = true
 	}
 
-	// Camera basis.
 	fwd := rl.Vector3Subtract(cam.Target, cam.Position)
 	fwd = rl.Vector3Normalize(fwd)
-	// ВАЖНО: используем cam.Up, а не мировой (0,1,0).
-	// Иначе при крене (Q/E) звёзды не крутятся вместе с горизонтом.
 	worldUp := rl.Vector3Normalize(cam.Up)
 	right := rl.Vector3CrossProduct(fwd, worldUp)
 	if rl.Vector3Length(right) < 0.001 {
@@ -50,7 +91,8 @@ func DrawSkybox(cam rl.Camera3D, screenW, screenH int32) {
 
 	sw := float32(screenW)
 	sh := float32(screenH)
-	fovFactor := sh / (2 * 0.7) // tan(35°)≈0.7
+	fovRad := float64(cam.Fovy) * math.Pi / 180.0
+	fovFactor := sh / (2 * float32(math.Tan(fovRad/2)))
 	cx := sw / 2
 	cy := sh / 2
 
@@ -65,6 +107,16 @@ func DrawSkybox(cam rl.Camera3D, screenW, screenH int32) {
 		sx := cx + (x/z)*fovFactor
 		sy := cy - (y/z)*fovFactor
 
-		rl.DrawCircle(int32(sx), int32(sy), s.size, s.color)
+		if sx < -8 || sx > sw+8 || sy < -8 || sy > sh+8 {
+			continue
+		}
+
+		ix := int32(sx)
+		iy := int32(sy)
+
+		glow := s.color
+		glow.A = 50
+		rl.DrawCircle(ix, iy, s.size, glow)
+		rl.DrawCircle(ix, iy, s.size*0.45, s.color)
 	}
 }

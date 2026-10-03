@@ -1,7 +1,6 @@
 package app
 
 import (
-	"fmt"
 	"time"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
@@ -35,17 +34,6 @@ func (a *App) draw() {
 		rl.ClearBackground(rl.NewColor(4, 4, 12, 255))
 
 		// Звёзды — 2D-точки на экране.
-		// DEBUG: направление камеры
-		if a.debugFrame%60 == 0 {
-			fwdDbg := rl.Vector3Subtract(camRender.Target, camRender.Position)
-			fwdDbg = rl.Vector3Normalize(fwdDbg)
-			a.log.Info("camDebug",
-				"pos", fmt.Sprintf("%.1f,%.1f,%.1f", camRender.Position.X, camRender.Position.Y, camRender.Position.Z),
-				"tgt", fmt.Sprintf("%.1f,%.1f,%.1f", camRender.Target.X, camRender.Target.Y, camRender.Target.Z),
-				"fwd", fmt.Sprintf("%.3f,%.3f,%.3f", fwdDbg.X, fwdDbg.Y, fwdDbg.Z),
-			)
-		}
-		a.debugFrame++
 		render.DrawSkybox(camRender, sw, sh)
 
 		rl.BeginMode3D(camRender)
