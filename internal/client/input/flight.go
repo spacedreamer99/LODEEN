@@ -4,10 +4,9 @@ import (
 	"math"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
-
-	"github.com/spacedreamer99/lodeen/internal/shared/protocol"
 )
 
+// Mode — режим управления: Creative (свободный полёт) или Survival (ходьба).
 type Mode int
 
 const (
@@ -15,6 +14,9 @@ const (
 	ModeSurvival
 )
 
+// FlightController — управление телом игрока в двух режимах.
+// Survival: rel-состояние (RelPos/RelVel) относительно Земли.
+// Creative: helio (Pos/Vel) в мировом фрейме.
 type FlightController struct {
 	Pos rl.Vector3
 	Vel rl.Vector3
@@ -34,7 +36,7 @@ type FlightController struct {
 
 	Mode Mode
 
-	// Bodies — для гравитации и «верха». Устанавливаются app.go каждый кадр.
+	// Bodies — для гравитации и "верха". Устанавливаются app.go каждый кадр.
 	// Pos живёт в helio (мировой фрейм). EarthPos — текущая позиция Земли.
 	EarthPos   rl.Vector3
 	SunPos     rl.Vector3
@@ -120,256 +122,6 @@ func (f *FlightController) Update(dt float32, mouseDelta rl.Vector2) {
 			}
 		}
 	}
-}
-
-// --- Survival ---
-
-func (f *FlightController) updateSurvivalLook(mouseDelta rl.Vector2) {
-	up := f.survivalUp()
-
-	// Yaw — вокруг up. Крутит только тело (TangentForward).
-	if mouseDelta.X != 0 {
-		q := rl.QuaternionFromAxisAngle(up, -mouseDelta.X*f.Sensitivity)
-		f.TangentForward = rl.Vector3RotateByQuaternion(f.TangentForward, q)
-		f.TangentForward = f.projectToTangent(f.TangentForward)
-	}
-
-	// Pitch — только наклон камеры. На тело не влияет.
-	f.Pitch -= mouseDelta.Y * f.Sensitivity
-	const maxPitch = 89 * math.Pi / 180
-	if f.Pitch > maxPitch {
-		f.Pitch = maxPitch
-	}
-	if f.Pitch < -maxPitch {
-		f.Pitch = -maxPitch
-	}
-}
-
-func (f *FlightController) survivalUp() rl.Vector3 {
-	rel := rl.Vector3Subtract(f.Pos, f.EarthPos)
-	d := rl.Vector3Length(rel)
-	if d < 0.01 {
-		d = 0.01
-	}
-	return rl.Vector3Scale(rel, 1/d)
-}
-
-func (f *FlightController) projectToTangent(v rl.Vector3) rl.Vector3 {
-	up := f.survivalUp()
-	out := rl.Vector3Subtract(v, rl.Vector3Scale(up, rl.Vector3DotProduct(v, up)))
-	if l := rl.Vector3Length(out); l > 0.001 {
-		return rl.Vector3Scale(out, 1/l)
-	}
-	// Резерв
-	wZ := rl.NewVector3(0, 0, 1)
-	out = rl.Vector3Subtract(wZ, rl.Vector3Scale(up, rl.Vector3DotProduct(wZ, up)))
-	if l := rl.Vector3Length(out); l > 0.001 {
-		return rl.Vector3Scale(out, 1/l)
-	}
-	wY := rl.NewVector3(0, 1, 0)
-	out = rl.Vector3Subtract(wY, rl.Vector3Scale(up, rl.Vector3DotProduct(wY, up)))
-	return rl.Vector3Normalize(out)
-}
-
-func (f *FlightController) parallelTransport(oldPos, newPos rl.Vector3) {
-	oldRel := rl.Vector3Subtract(oldPos, f.EarthPos)
-	newRel := rl.Vector3Subtract(newPos, f.EarthPos)
-	oldUp := rl.Vector3Normalize(oldRel)
-	newUp := rl.Vector3Normalize(newRel)
-	if rl.Vector3Distance(oldUp, newUp) < 0.0001 {
-		return
-	}
-	q := rl.QuaternionFromVector3ToVector3(oldUp, newUp)
-	f.TangentForward = rl.Vector3RotateByQuaternion(f.TangentForward, q)
-}
-
-func (f *FlightController) updateSurvival(dt float32) {
-	const (
-		gravity   = 30.0
-		walkSpeed = 14.0
-		jumpSpeed = 16.0
-		groundEps = 0.5
-	)
-	oldPos := f.Pos
-
-	// Инициализация RelPos/RelVel — один раз.
-	if !f.RelInit {
-		f.RelPos = rl.Vector3Subtract(f.Pos, f.EarthPos)
-		f.RelVel = rl.Vector3Subtract(f.Vel, f.EarthVel)
-		f.RelInit = true
-	}
-
-	// Работаем ТОЛЬКО с rel-состоянием. f.Pos/f.Vel — производные.
-	rel := f.RelPos
-	relVel := f.RelVel
-
-	dist := rl.Vector3Length(rel)
-	if dist < 0.01 {
-		dist = 0.01
-	}
-	dir := rl.Vector3Scale(rel, 1/dist)
-
-	th := protocol.TerrainHeight(dir.X, dir.Y, dir.Z)
-	overWater := th < protocol.SeaLevel
-	swimming := overWater && !f.InBoat
-
-	ws := float32(walkSpeed)
-	switch {
-	case f.Riding:
-		ws *= 2.5
-	case f.InBoat && overWater:
-		ws *= 2.0
-	case f.InBoat && !overWater:
-		ws *= 0.15
-	case swimming:
-		ws *= 0.35
-	}
-
-	surfaceR := protocol.SurfaceRadius(protocol.Vector3{X: dir.X, Y: dir.Y, Z: dir.Z})
-	minR := surfaceR + protocol.PlayerHeight
-
-	up := dir
-
-	// Гравитация.
-	relVel = rl.Vector3Subtract(relVel, rl.Vector3Scale(up, gravity*dt))
-
-	onGround := dist <= minR+groundEps
-
-	// WASD.
-	fwTan := f.TangentForward
-	rt := rl.Vector3Normalize(rl.Vector3CrossProduct(fwTan, up))
-
-	wish := rl.Vector3Zero()
-	if rl.IsKeyDown(rl.KeyW) {
-		wish = rl.Vector3Add(wish, fwTan)
-	}
-	if rl.IsKeyDown(rl.KeyS) {
-		wish = rl.Vector3Subtract(wish, fwTan)
-	}
-	if rl.IsKeyDown(rl.KeyD) {
-		wish = rl.Vector3Add(wish, rt)
-	}
-	if rl.IsKeyDown(rl.KeyA) {
-		wish = rl.Vector3Subtract(wish, rt)
-	}
-	if l := rl.Vector3Length(wish); l > 0 {
-		wish = rl.Vector3Scale(wish, ws/l)
-	}
-
-	velTan := rl.Vector3Subtract(relVel, rl.Vector3Scale(up, rl.Vector3DotProduct(relVel, up)))
-	if onGround {
-		velTan = rl.Vector3Add(velTan, rl.Vector3Scale(rl.Vector3Subtract(wish, velTan), 0.25))
-		velTan = rl.Vector3Scale(velTan, 0.75)
-	} else {
-		velTan = rl.Vector3Add(velTan, rl.Vector3Scale(rl.Vector3Subtract(wish, velTan), 0.05))
-	}
-	velRad := rl.Vector3Scale(up, rl.Vector3DotProduct(relVel, up))
-	relVel = rl.Vector3Add(velRad, velTan)
-
-	if onGround && rl.IsKeyDown(rl.KeySpace) {
-		relVel = rl.Vector3Add(relVel, rl.Vector3Scale(up, jumpSpeed))
-		onGround = false
-	}
-
-	// Интеграция rel-позиции.
-	rel = rl.Vector3Add(rel, rl.Vector3Scale(relVel, dt))
-
-	// Коллизия в rel-координатах.
-	newDist := rl.Vector3Length(rel)
-	if newDist < minR {
-		scale := minR / newDist
-		rel = rl.Vector3Scale(rel, scale)
-		nr := rl.Vector3Normalize(rel)
-		vr := rl.Vector3DotProduct(relVel, nr)
-		if vr < 0 {
-			relVel = rl.Vector3Subtract(relVel, rl.Vector3Scale(nr, vr))
-		}
-	}
-
-	// Сохраняем основное состояние.
-	f.RelPos = rel
-	f.RelVel = relVel
-
-	// Производные для рендера — точные, БЕЗ накопления ошибки.
-	f.Pos = rl.Vector3Add(f.EarthPos, rel)
-	f.Vel = rl.Vector3Add(f.EarthVel, relVel)
-
-	f.parallelTransport(oldPos, f.Pos)
-	f.TangentForward = f.projectToTangent(f.TangentForward)
-}
-
-// cameraForward — куда смотрит камера в Survival:
-// TangentForward повёрнут на Pitch вокруг right.
-func (f *FlightController) cameraForward() rl.Vector3 {
-	up := f.survivalUp()
-	cp := float32(math.Cos(float64(f.Pitch)))
-	sp := float32(math.Sin(float64(f.Pitch)))
-	dir := rl.Vector3Add(rl.Vector3Scale(f.TangentForward, cp), rl.Vector3Scale(up, sp))
-	return rl.Vector3Normalize(dir)
-}
-
-// --- Creative ---
-
-func (f *FlightController) updateCreativeLook(mouseDelta rl.Vector2, dt float32) {
-	if mouseDelta.X != 0 {
-		q := rl.QuaternionFromAxisAngle(rl.NewVector3(0, 1, 0), -mouseDelta.X*f.Sensitivity)
-		f.Quat = rl.QuaternionNormalize(rl.QuaternionMultiply(f.Quat, q))
-	}
-	if mouseDelta.Y != 0 {
-		q := rl.QuaternionFromAxisAngle(rl.NewVector3(1, 0, 0), -mouseDelta.Y*f.Sensitivity)
-		f.Quat = rl.QuaternionNormalize(rl.QuaternionMultiply(f.Quat, q))
-	}
-	if rl.IsKeyDown(rl.KeyQ) {
-		q := rl.QuaternionFromAxisAngle(rl.NewVector3(0, 0, -1), -f.RollSpeed*dt)
-		f.Quat = rl.QuaternionNormalize(rl.QuaternionMultiply(f.Quat, q))
-	}
-	if rl.IsKeyDown(rl.KeyE) {
-		q := rl.QuaternionFromAxisAngle(rl.NewVector3(0, 0, -1), f.RollSpeed*dt)
-		f.Quat = rl.QuaternionNormalize(rl.QuaternionMultiply(f.Quat, q))
-	}
-}
-
-func (f *FlightController) updateCreative(dt float32) {
-	// Компенсация движения Земли — в SyncToEarthFrame(), вызывается извне
-	// каждый кадр, даже когда UI открыт.
-
-	fw := f.creativeForward()
-	rt := f.creativeRight()
-	up := f.creativeUp()
-	move := rl.Vector3Zero()
-	if rl.IsKeyDown(rl.KeyW) {
-		move = rl.Vector3Add(move, fw)
-	}
-	if rl.IsKeyDown(rl.KeyS) {
-		move = rl.Vector3Subtract(move, fw)
-	}
-	if rl.IsKeyDown(rl.KeyD) {
-		move = rl.Vector3Add(move, rt)
-	}
-	if rl.IsKeyDown(rl.KeyA) {
-		move = rl.Vector3Subtract(move, rt)
-	}
-	if rl.IsKeyDown(rl.KeySpace) {
-		move = rl.Vector3Add(move, up)
-	}
-	if rl.IsKeyDown(rl.KeyLeftShift) {
-		move = rl.Vector3Subtract(move, up)
-	}
-	if l := rl.Vector3Length(move); l > 0 {
-		move = rl.Vector3Scale(move, 1.0/l)
-		f.Pos = rl.Vector3Add(f.Pos, rl.Vector3Scale(move, f.Speed*dt))
-	}
-	f.Vel = rl.Vector3Zero()
-}
-
-func (f *FlightController) creativeForward() rl.Vector3 {
-	return rl.Vector3RotateByQuaternion(rl.NewVector3(0, 0, -1), f.Quat)
-}
-func (f *FlightController) creativeRight() rl.Vector3 {
-	return rl.Vector3RotateByQuaternion(rl.NewVector3(1, 0, 0), f.Quat)
-}
-func (f *FlightController) creativeUp() rl.Vector3 {
-	return rl.Vector3RotateByQuaternion(rl.NewVector3(0, 1, 0), f.Quat)
 }
 
 // --- Публичные геттеры (используются в app.go) ---
@@ -469,77 +221,4 @@ func lookRotation(forward, up rl.Vector3) rl.Quaternion {
 	// Шаг 2: довернуть вокруг forward чтобы up совпал
 	q2 := rl.QuaternionFromVector3ToVector3(upAfter, up)
 	return rl.QuaternionNormalize(rl.QuaternionMultiply(q2, q1))
-}
-
-// SyncToEarthFrame обновляет Pos из текущей позиции Земли.
-// Вызывается каждый кадр (даже когда открыт UI) — иначе
-// игрок отстаёт от планеты, пока UI блокирует физику.
-func (f *FlightController) SyncToEarthFrame(dt float32) {
-	switch f.Mode {
-	case ModeSurvival:
-		if f.RelInit {
-			f.Pos = rl.Vector3Add(f.EarthPos, f.RelPos)
-			f.Vel = rl.Vector3Add(f.EarthVel, f.RelVel)
-		}
-	case ModeCreative:
-		if f.AttachedBody == "earth" {
-			f.Pos = rl.Vector3Add(f.Pos, rl.Vector3Scale(f.EarthVel, dt))
-		}
-	}
-}
-
-// TickPhysicsOnly применяет гравитацию и коллизию без ввода.
-// Используется на паузе / при открытом UI, чтобы персонаж не зависал в воздухе.
-func (f *FlightController) TickPhysicsOnly(dt float32) {
-	if f.Mode != ModeSurvival || !f.RelInit {
-		return
-	}
-	oldPos := f.Pos
-	rel := f.RelPos
-	relVel := f.RelVel
-
-	dist := rl.Vector3Length(rel)
-	if dist < 0.01 {
-		dist = 0.01
-	}
-	up := rl.Vector3Scale(rel, 1/dist)
-
-	const gravity = 30.0
-	const groundEps = 0.5
-
-	surfaceR := protocol.SurfaceRadius(protocol.Vector3{X: up.X, Y: up.Y, Z: up.Z})
-	minR := surfaceR + protocol.PlayerHeight
-
-	onGround := dist <= minR+groundEps
-
-	if !onGround {
-		relVel = rl.Vector3Subtract(relVel, rl.Vector3Scale(up, gravity*dt))
-	}
-
-	// Трение касательной (чтобы не улетел далеко по инерции).
-	velTan := rl.Vector3Subtract(relVel, rl.Vector3Scale(up, rl.Vector3DotProduct(relVel, up)))
-	velTan = rl.Vector3Scale(velTan, 0.9)
-	velRad := rl.Vector3Scale(up, rl.Vector3DotProduct(relVel, up))
-	relVel = rl.Vector3Add(velRad, velTan)
-
-	rel = rl.Vector3Add(rel, rl.Vector3Scale(relVel, dt))
-
-	newDist := rl.Vector3Length(rel)
-	if newDist < minR {
-		scale := minR / newDist
-		rel = rl.Vector3Scale(rel, scale)
-		nr := rl.Vector3Normalize(rel)
-		vr := rl.Vector3DotProduct(relVel, nr)
-		if vr < 0 {
-			relVel = rl.Vector3Subtract(relVel, rl.Vector3Scale(nr, vr))
-		}
-	}
-
-	f.RelPos = rel
-	f.RelVel = relVel
-	f.Pos = rl.Vector3Add(f.EarthPos, rel)
-	f.Vel = rl.Vector3Add(f.EarthVel, relVel)
-
-	f.parallelTransport(oldPos, f.Pos)
-	f.TangentForward = f.projectToTangent(f.TangentForward)
 }
