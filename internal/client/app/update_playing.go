@@ -561,12 +561,12 @@ func (a *App) checkPause() bool {
 		return false
 	}
 	if a.flight != nil && a.flight.HelioInit {
-		a.pausedRelPos = protocol.Vector3{
+		a.pause.pausedRelPos = protocol.Vector3{
 			X: a.flight.Pos.X - a.world.earthPos.X,
 			Y: a.flight.Pos.Y - a.world.earthPos.Y,
 			Z: a.flight.Pos.Z - a.world.earthPos.Z,
 		}
-		a.pausedRelVel = protocol.Vector3{
+		a.pause.pausedRelVel = protocol.Vector3{
 			X: a.flight.Vel.X - a.world.earthVel.X,
 			Y: a.flight.Vel.Y - a.world.earthVel.Y,
 			Z: a.flight.Vel.Z - a.world.earthVel.Z,
@@ -574,8 +574,8 @@ func (a *App) checkPause() bool {
 		a.log.Info("PAUSE ENTERED",
 			"helio", fmt.Sprintf("%.2f,%.2f,%.2f", a.flight.Pos.X, a.flight.Pos.Y, a.flight.Pos.Z),
 			"earth", fmt.Sprintf("%.2f,%.2f,%.2f", a.world.earthPos.X, a.world.earthPos.Y, a.world.earthPos.Z),
-			"relPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.pausedRelPos.X, a.pausedRelPos.Y, a.pausedRelPos.Z),
-			"relVel", fmt.Sprintf("%.3f,%.3f,%.3f", a.pausedRelVel.X, a.pausedRelVel.Y, a.pausedRelVel.Z))
+			"relPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.pause.pausedRelPos.X, a.pause.pausedRelPos.Y, a.pause.pausedRelPos.Z),
+			"relVel", fmt.Sprintf("%.3f,%.3f,%.3f", a.pause.pausedRelVel.X, a.pause.pausedRelVel.Y, a.pause.pausedRelVel.Z))
 	}
 	a.mode = state.ModePaused
 	return true
@@ -591,30 +591,30 @@ func (a *App) updateUnfocusFreeze() bool {
 	if a.flight == nil || !a.flight.HelioInit {
 		return true
 	}
-	if !a.unfocusFreeze {
-		a.unfocusRelPos = protocol.Vector3{
+	if !a.pause.unfocusFreeze {
+		a.pause.unfocusRelPos = protocol.Vector3{
 			X: a.flight.Pos.X - a.world.earthPos.X,
 			Y: a.flight.Pos.Y - a.world.earthPos.Y,
 			Z: a.flight.Pos.Z - a.world.earthPos.Z,
 		}
-		a.unfocusRelVel = protocol.Vector3{
+		a.pause.unfocusRelVel = protocol.Vector3{
 			X: a.flight.Vel.X - a.world.earthVel.X,
 			Y: a.flight.Vel.Y - a.world.earthVel.Y,
 			Z: a.flight.Vel.Z - a.world.earthVel.Z,
 		}
-		a.unfocusFreeze = true
+		a.pause.unfocusFreeze = true
 		a.log.Info("UNFOCUS freeze",
-			"relPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.unfocusRelPos.X, a.unfocusRelPos.Y, a.unfocusRelPos.Z))
+			"relPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.pause.unfocusRelPos.X, a.pause.unfocusRelPos.Y, a.pause.unfocusRelPos.Z))
 	}
 	a.flight.Pos = rl.NewVector3(
-		a.world.earthPos.X+a.unfocusRelPos.X,
-		a.world.earthPos.Y+a.unfocusRelPos.Y,
-		a.world.earthPos.Z+a.unfocusRelPos.Z,
+		a.world.earthPos.X+a.pause.unfocusRelPos.X,
+		a.world.earthPos.Y+a.pause.unfocusRelPos.Y,
+		a.world.earthPos.Z+a.pause.unfocusRelPos.Z,
 	)
 	a.flight.Vel = rl.NewVector3(
-		a.world.earthVel.X+a.unfocusRelVel.X,
-		a.world.earthVel.Y+a.unfocusRelVel.Y,
-		a.world.earthVel.Z+a.unfocusRelVel.Z,
+		a.world.earthVel.X+a.pause.unfocusRelVel.X,
+		a.world.earthVel.Y+a.pause.unfocusRelVel.Y,
+		a.world.earthVel.Z+a.pause.unfocusRelVel.Z,
 	)
 	fw := a.flight.Forward()
 	a.camera.camera.Position = a.flight.Pos
@@ -624,10 +624,10 @@ func (a *App) updateUnfocusFreeze() bool {
 }
 
 func (a *App) restoreFocus() {
-	if !a.unfocusFreeze {
+	if !a.pause.unfocusFreeze {
 		return
 	}
-	a.unfocusFreeze = false
+	a.pause.unfocusFreeze = false
 	a.log.Info("UNFOCUS restored",
 		"helio", fmt.Sprintf("%.2f,%.2f,%.2f", a.flight.Pos.X, a.flight.Pos.Y, a.flight.Pos.Z),
 		"earth", fmt.Sprintf("%.2f,%.2f,%.2f", a.world.earthPos.X, a.world.earthPos.Y, a.world.earthPos.Z))

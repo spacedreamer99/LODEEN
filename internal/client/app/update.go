@@ -225,12 +225,12 @@ func (a *App) updatePausePhysics() {
 	a.flight.TickPhysicsOnly(rl.GetFrameTime())
 
 	// pausedRel* используются при выходе из паузы (updatePaused).
-	a.pausedRelPos = protocol.Vector3{
+	a.pause.pausedRelPos = protocol.Vector3{
 		X: a.flight.RelPos.X,
 		Y: a.flight.RelPos.Y,
 		Z: a.flight.RelPos.Z,
 	}
-	a.pausedRelVel = protocol.Vector3{
+	a.pause.pausedRelVel = protocol.Vector3{
 		X: a.flight.RelVel.X,
 		Y: a.flight.RelVel.Y,
 		Z: a.flight.RelVel.Z,
@@ -315,14 +315,14 @@ func (a *App) updatePaused() {
 func (a *App) exitPause() {
 	if a.flight != nil && a.flight.HelioInit {
 		a.flight.Vel = rl.NewVector3(
-			a.world.earthVel.X+a.pausedRelVel.X,
-			a.world.earthVel.Y+a.pausedRelVel.Y,
-			a.world.earthVel.Z+a.pausedRelVel.Z,
+			a.world.earthVel.X+a.pause.pausedRelVel.X,
+			a.world.earthVel.Y+a.pause.pausedRelVel.Y,
+			a.world.earthVel.Z+a.pause.pausedRelVel.Z,
 		)
 		a.log.Info("PAUSE EXITED",
 			"earth", fmt.Sprintf("%.2f,%.2f,%.2f", a.world.earthPos.X, a.world.earthPos.Y, a.world.earthPos.Z),
 			"flightPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.flight.Pos.X, a.flight.Pos.Y, a.flight.Pos.Z),
-			"expectedPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.world.earthPos.X+a.pausedRelPos.X, a.world.earthPos.Y+a.pausedRelPos.Y, a.world.earthPos.Z+a.pausedRelPos.Z),
+			"expectedPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.world.earthPos.X+a.pause.pausedRelPos.X, a.world.earthPos.Y+a.pause.pausedRelPos.Y, a.world.earthPos.Z+a.pause.pausedRelPos.Z),
 			"flightVel", fmt.Sprintf("%.3f,%.3f,%.3f", a.flight.Vel.X, a.flight.Vel.Y, a.flight.Vel.Z))
 	}
 	a.mode = state.ModePlaying

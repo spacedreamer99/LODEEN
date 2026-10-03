@@ -18,7 +18,7 @@ func (a *App) draw() {
 	// Проверяем, изменился ли размер окна — пересоздаём UI-буфер.
 	sw := int32(rl.GetScreenWidth())
 	sh := int32(rl.GetScreenHeight())
-	if sw != a.uiTargetW || sh != a.uiTargetH {
+	if sw != a.render.w || sh != a.render.h {
 		a.resizeUITarget()
 		a.startAt = time.Now()
 	}
@@ -85,7 +85,7 @@ func (a *App) draw() {
 	}
 
 	// UI — в буфер размером с окно
-	rl.BeginTextureMode(a.uiTarget)
+	rl.BeginTextureMode(a.render.tex)
 	rl.ClearBackground(rl.Blank)
 
 	switch a.mode {
@@ -119,20 +119,20 @@ func (a *App) draw() {
 	rl.EndTextureMode()
 
 	// Показываем буфер 1:1 — без масштабирования, поэтому резко.
-	src := rl.NewRectangle(0, 0, float32(a.uiTarget.Texture.Width), -float32(a.uiTarget.Texture.Height))
+	src := rl.NewRectangle(0, 0, float32(a.render.tex.Texture.Width), -float32(a.render.tex.Texture.Height))
 	dst := rl.NewRectangle(0, 0, float32(sw), float32(sh))
-	rl.DrawTexturePro(a.uiTarget.Texture, src, dst, rl.NewVector2(0, 0), 0, rl.White)
+	rl.DrawTexturePro(a.render.tex.Texture, src, dst, rl.NewVector2(0, 0), 0, rl.White)
 }
 
 func (a *App) resizeUITarget() {
-	if a.uiTarget.ID != 0 {
+	if a.render.tex.ID != 0 {
 	}
 	w := int32(rl.GetScreenWidth())
 	h := int32(rl.GetScreenHeight())
 	if w <= 0 || h <= 0 {
 		w, h = screenW, screenH
 	}
-	a.uiTarget = rl.LoadRenderTexture(w, h)
-	a.uiTargetW = w
-	a.uiTargetH = h
+	a.render.tex = rl.LoadRenderTexture(w, h)
+	a.render.w = w
+	a.render.h = h
 }
