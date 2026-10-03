@@ -1070,3 +1070,102 @@ void main() {
     finalColor = vec4(col, density);
 }
 `
+
+// DrawStar2 — вторая звезда как 3D-сфера. Тот же трюк с far plane,
+// что и у DrawSun3D: подтягиваем позицию к камере, сохраняя угловой размер.
+func (s *Scene) DrawStar2(cam rl.Camera3D) {
+	star2Pos := rl.NewVector3(protocol.Star2Pos.X, protocol.Star2Pos.Y, protocol.Star2Pos.Z)
+
+	fwdX := cam.Target.X - cam.Position.X
+	fwdY := cam.Target.Y - cam.Position.Y
+	fwdZ := cam.Target.Z - cam.Position.Z
+	toX := star2Pos.X - cam.Position.X
+	toY := star2Pos.Y - cam.Position.Y
+	toZ := star2Pos.Z - cam.Position.Z
+	if fwdX*toX+fwdY*toY+fwdZ*toZ <= 0 {
+		return
+	}
+
+	dirX := star2Pos.X - cam.Position.X
+	dirY := star2Pos.Y - cam.Position.Y
+	dirZ := star2Pos.Z - cam.Position.Z
+	dist := float32(math.Sqrt(float64(dirX*dirX + dirY*dirY + dirZ*dirZ)))
+	if dist < 0.01 {
+		return
+	}
+
+	const maxDist = 850.0
+	var drawPos rl.Vector3
+	var drawRadius float32
+
+	if dist <= maxDist {
+		drawPos = star2Pos
+		drawRadius = protocol.Star2Radius
+	} else {
+		k := maxDist / dist
+		drawPos = rl.NewVector3(
+			cam.Position.X+dirX*k,
+			cam.Position.Y+dirY*k,
+			cam.Position.Z+dirZ*k,
+		)
+		drawRadius = protocol.Star2Radius * k
+	}
+
+	// Оранжевый карлик.
+	rl.DrawSphere(drawPos, drawRadius, rl.NewColor(255, 140, 60, 255))
+	rl.DrawSphereWires(drawPos, drawRadius, 24, 24, rl.NewColor(255, 90, 20, 200))
+	if drawRadius < maxDist*0.9 {
+		rl.DrawSphereWires(drawPos, drawRadius*1.12, 16, 16,
+			rl.NewColor(255, 180, 100, 80))
+	}
+}
+
+// DrawPlanet2 — вторая планета как 3D-сфера.
+// planet2Pos — helio-координаты (из snapshot сервера).
+func (s *Scene) DrawPlanet2(cam rl.Camera3D, planet2Pos protocol.Vector3) {
+	p2 := rl.NewVector3(planet2Pos.X, planet2Pos.Y, planet2Pos.Z)
+
+	fwdX := cam.Target.X - cam.Position.X
+	fwdY := cam.Target.Y - cam.Position.Y
+	fwdZ := cam.Target.Z - cam.Position.Z
+	toX := p2.X - cam.Position.X
+	toY := p2.Y - cam.Position.Y
+	toZ := p2.Z - cam.Position.Z
+	if fwdX*toX+fwdY*toY+fwdZ*toZ <= 0 {
+		return
+	}
+
+	dirX := p2.X - cam.Position.X
+	dirY := p2.Y - cam.Position.Y
+	dirZ := p2.Z - cam.Position.Z
+	dist := float32(math.Sqrt(float64(dirX*dirX + dirY*dirY + dirZ*dirZ)))
+	if dist < 0.01 {
+		return
+	}
+
+	const maxDist = 850.0
+	var drawPos rl.Vector3
+	var drawRadius float32
+
+	if dist <= maxDist {
+		drawPos = p2
+		drawRadius = protocol.Planet2Radius
+	} else {
+		k := maxDist / dist
+		drawPos = rl.NewVector3(
+			cam.Position.X+dirX*k,
+			cam.Position.Y+dirY*k,
+			cam.Position.Z+dirZ*k,
+		)
+		drawRadius = protocol.Planet2Radius * k
+	}
+
+	// Голубоватая планета с ободком.
+	rl.DrawSphere(drawPos, drawRadius, rl.NewColor(80, 180, 200, 255))
+	rl.DrawSphereWires(drawPos, drawRadius, 24, 24, rl.NewColor(40, 120, 160, 200))
+	// Атмосфера (тонкое кольцо).
+	if drawRadius < maxDist*0.9 {
+		rl.DrawSphereWires(drawPos, drawRadius*1.08, 16, 16,
+			rl.NewColor(160, 220, 240, 60))
+	}
+}

@@ -41,6 +41,7 @@ const (
 	TypeBoardRocket     Type = "board_rocket"
 	TypeExitRocket      Type = "exit_rocket"
 	TypeRocketInput     Type = "rocket_input"
+	TypeTeleport        Type = "teleport"
 )
 
 type Envelope struct {
@@ -129,6 +130,10 @@ type Snapshot struct {
 
 	EarthPos Vector3 `json:"earth_pos,omitempty"`
 	EarthVel Vector3 `json:"earth_vel,omitempty"`
+
+	// Вторая звёздная система
+	Planet2Pos Vector3 `json:"planet2_pos,omitempty"`
+	Planet2Vel Vector3 `json:"planet2_vel,omitempty"`
 }
 
 type Rocket struct {
@@ -224,6 +229,13 @@ type BoardRocket struct {
 }
 
 type ExitRocket struct{}
+
+// Teleport — сервер приказывает клиенту переместиться в точку.
+type Teleport struct {
+	X float32 `json:"x"`
+	Y float32 `json:"y"`
+	Z float32 `json:"z"`
+}
 
 type RocketInput struct {
 	Thrust    float32 `json:"thrust"`

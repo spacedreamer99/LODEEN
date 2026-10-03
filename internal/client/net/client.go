@@ -46,12 +46,15 @@ type Client struct {
 	ownHunger   float32
 	ownHP       int
 
-	chatCh chan protocol.ChatMessage
+	chatCh     chan protocol.ChatMessage
+	teleportCh chan protocol.Teleport
 
-	earthMu  sync.RWMutex
-	earthPos protocol.Vector3
-	earthVel protocol.Vector3
-	lastTick uint64
+	earthMu    sync.RWMutex
+	earthPos   protocol.Vector3
+	earthVel   protocol.Vector3
+	planet2Pos protocol.Vector3
+	planet2Vel protocol.Vector3
+	lastTick   uint64
 
 	resourcesMu sync.RWMutex
 	resources   []protocol.Resource
@@ -98,10 +101,11 @@ type Client struct {
 
 func New(log *slog.Logger) *Client {
 	return &Client{
-		log:       log,
-		players:   make(map[string][]timedState),
-		chatCh:    make(chan protocol.ChatMessage, 128),
-		inventory: make(map[string]int),
+		log:        log,
+		players:    make(map[string][]timedState),
+		chatCh:     make(chan protocol.ChatMessage, 128),
+		teleportCh: make(chan protocol.Teleport, 4),
+		inventory:  make(map[string]int),
 	}
 }
 
@@ -115,6 +119,18 @@ func (c *Client) LastSnapshotTick() uint64 {
 	c.earthMu.RLock()
 	defer c.earthMu.RUnlock()
 	return c.lastTick
+}
+
+func (c *Client) Planet2Pos() protocol.Vector3 {
+	c.earthMu.RLock()
+	defer c.earthMu.RUnlock()
+	return c.planet2Pos
+}
+
+func (c *Client) Planet2Vel() protocol.Vector3 {
+	c.earthMu.RLock()
+	defer c.earthMu.RUnlock()
+	return c.planet2Vel
 }
 
 func (c *Client) EarthVel() protocol.Vector3 {
@@ -142,6 +158,8 @@ func (c *Client) RTT() time.Duration {
 }
 
 func (c *Client) Chat() <-chan protocol.ChatMessage { return c.chatCh }
+
+func (c *Client) Teleport() <-chan protocol.Teleport { return c.teleportCh }
 
 func (c *Client) Hunger() float32 {
 	c.ownHungerMu.RLock()
@@ -704,6 +722,8 @@ func (c *Client) handle(env protocol.Envelope) {
 		c.earthMu.Lock()
 		c.earthPos = s.EarthPos
 		c.earthVel = s.EarthVel
+		c.planet2Pos = s.Planet2Pos
+		c.planet2Vel = s.Planet2Vel
 		c.lastTick = s.Tick
 		c.earthMu.Unlock()
 
@@ -725,6 +745,13 @@ func (c *Client) handle(env protocol.Envelope) {
 		c.inventoryMu.Lock()
 		c.inventory = inv.Items
 		c.inventoryMu.Unlock()
+	case protocol.TypeTeleport:
+		var tp protocol.Teleport
+		_ = env.Decode(&tp)
+		select {
+		case c.teleportCh <- tp:
+		default:
+		}
 	case protocol.TypePong:
 		var p protocol.Pong
 		_ = env.Decode(&p)

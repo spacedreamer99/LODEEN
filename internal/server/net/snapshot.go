@@ -174,6 +174,8 @@ func (s *Server) broadcastSnapshot() {
 
 	earthPos := s.world.EarthPos
 	earthVel := s.world.EarthVel
+	planet2Pos := s.world.Planet2Pos
+	planet2Vel := s.world.Planet2Vel
 
 	env, err := protocol.NewEnvelope(protocol.TypeSnapshot, protocol.Snapshot{
 		Tick:        s.tick,
@@ -191,6 +193,8 @@ func (s *Server) broadcastSnapshot() {
 		Rockets:     rockets,
 		EarthPos:    earthPos,
 		EarthVel:    earthVel,
+		Planet2Pos:  planet2Pos,
+		Planet2Vel:  planet2Vel,
 	})
 	if err != nil {
 		return

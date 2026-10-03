@@ -50,6 +50,24 @@ func (a *App) updatePlaying(dt float32) {
 		return
 	}
 
+	// M — карта орбиты (доступна вне ракеты и внутри неё).
+	if rl.IsKeyPressed(rl.KeyM) {
+		a.showOrbitMap = !a.showOrbitMap
+		if a.showOrbitMap {
+			a.orbitInit = false
+			rl.EnableCursor()
+			rl.ShowCursor()
+		} else {
+			rl.DisableCursor()
+		}
+	}
+
+	// Если карта открыта — блокируем остальную логику.
+	if a.showOrbitMap {
+		a.updateOrbitMapInput()
+		return
+	}
+
 	if rl.IsKeyPressed(rl.KeyF1) && a.flight != nil {
 		if a.flight.Mode == input.ModeCreative {
 			a.flight.Mode = input.ModeSurvival

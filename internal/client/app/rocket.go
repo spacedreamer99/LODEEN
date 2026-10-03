@@ -139,18 +139,6 @@ func (a *App) updatePilotedRocket(dt float32) bool {
 		a.autoPilot = ""
 	}
 
-	// M — карта орбиты.
-	if rl.IsKeyPressed(rl.KeyM) {
-		a.showOrbitMap = !a.showOrbitMap
-		if a.showOrbitMap {
-			a.orbitInit = false
-			rl.EnableCursor()
-			rl.ShowCursor()
-		} else {
-			rl.DisableCursor()
-		}
-	}
-
 	// E — выйти.
 	if rl.IsKeyPressed(rl.KeyE) {
 		_ = a.nc.ExitRocket()

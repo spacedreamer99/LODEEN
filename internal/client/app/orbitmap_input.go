@@ -45,18 +45,22 @@ func (a *App) updateOrbitMapInput() {
 		if a.orbitDistance < 40 {
 			a.orbitDistance = 40
 		}
-		if a.orbitDistance > 30000 {
-			a.orbitDistance = 30000
+		if a.orbitDistance > 150000 {
+			a.orbitDistance = 150000
 		}
 	}
 	if rl.IsKeyPressed(rl.KeyF) {
 		switch a.orbitFocus {
 		case "":
-			a.orbitFocus = "rocket"
-		case "rocket":
 			a.orbitFocus = "earth"
 		case "earth":
 			a.orbitFocus = "sun"
+		case "sun":
+			a.orbitFocus = "star2"
+		case "star2":
+			a.orbitFocus = "planet2"
+		case "planet2":
+			a.orbitFocus = "rocket"
 		default:
 			a.orbitFocus = ""
 		}
@@ -89,6 +93,20 @@ func (a *App) handleOrbitMapClick(mx, my int32) {
 	dy = mfy - a.sunScrY
 	if dx*dx+dy*dy < 40*40 {
 		a.orbitFocus = "sun"
+		return
+	}
+	// Star2.
+	dx = mfx - a.star2ScrX
+	dy = mfy - a.star2ScrY
+	if dx*dx+dy*dy < 40*40 {
+		a.orbitFocus = "star2"
+		return
+	}
+	// Planet2.
+	dx = mfx - a.planet2ScrX
+	dy = mfy - a.planet2ScrY
+	if dx*dx+dy*dy < 30*30 {
+		a.orbitFocus = "planet2"
 		return
 	}
 	// Пустое место — авто.

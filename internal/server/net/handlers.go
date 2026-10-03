@@ -120,6 +120,68 @@ func (s *Server) handleMessage(c *Client, env *protocol.Envelope) {
 			break
 		}
 		// Чит-команда /clearinv — очистить инвентарь.
+		// Чит-команда /tp <body> — телепорт к телу.
+		if cm.Text == "/tp sun" {
+			c.setState(protocol.PlayerState{
+				ID:   c.ID,
+				Nick: c.Nick,
+				X:    protocol.SunPos.X + protocol.SunRadius + 200,
+				Y:    protocol.SunPos.Y,
+				Z:    protocol.SunPos.Z,
+			})
+			c.sendEnvelope(protocol.TypeTeleport, protocol.Teleport{
+				X: protocol.SunPos.X + protocol.SunRadius + 200,
+				Y: protocol.SunPos.Y,
+				Z: protocol.SunPos.Z,
+			})
+			break
+		}
+		if cm.Text == "/tp earth" {
+			c.setState(protocol.PlayerState{
+				ID:   c.ID,
+				Nick: c.Nick,
+				X:    s.world.EarthPos.X,
+				Y:    s.world.EarthPos.Y + protocol.PlanetRadius + protocol.PlayerHeight + 5,
+				Z:    s.world.EarthPos.Z,
+			})
+			c.sendEnvelope(protocol.TypeTeleport, protocol.Teleport{
+				X: s.world.EarthPos.X,
+				Y: s.world.EarthPos.Y + protocol.PlanetRadius + protocol.PlayerHeight + 5,
+				Z: s.world.EarthPos.Z,
+			})
+			break
+		}
+		if cm.Text == "/tp star2" {
+			c.setState(protocol.PlayerState{
+				ID:   c.ID,
+				Nick: c.Nick,
+				X:    protocol.Star2Pos.X + protocol.Star2Radius + 200,
+				Y:    protocol.Star2Pos.Y,
+				Z:    protocol.Star2Pos.Z,
+			})
+			c.sendEnvelope(protocol.TypeTeleport, protocol.Teleport{
+				X: protocol.Star2Pos.X + protocol.Star2Radius + 200,
+				Y: protocol.Star2Pos.Y,
+				Z: protocol.Star2Pos.Z,
+			})
+			break
+		}
+		if cm.Text == "/tp planet2" {
+			c.setState(protocol.PlayerState{
+				ID:   c.ID,
+				Nick: c.Nick,
+				X:    s.world.Planet2Pos.X,
+				Y:    s.world.Planet2Pos.Y + protocol.Planet2Radius + protocol.PlayerHeight + 5,
+				Z:    s.world.Planet2Pos.Z,
+			})
+			c.sendEnvelope(protocol.TypeTeleport, protocol.Teleport{
+				X: s.world.Planet2Pos.X,
+				Y: s.world.Planet2Pos.Y + protocol.Planet2Radius + protocol.PlayerHeight + 5,
+				Z: s.world.Planet2Pos.Z,
+			})
+			break
+		}
+
 		if cm.Text == "/clearinv" {
 			c.mu.Lock()
 			c.inventory = make(map[string]int)
