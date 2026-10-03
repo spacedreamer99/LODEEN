@@ -9,10 +9,10 @@ import (
 func (s *Server) handleTameMammoth(c *Client, mammothID string) {
 	ps := c.State()
 
-	s.mammothsMu.Lock()
-	m, ok := s.mammoths[mammothID]
+	s.mammoths.Lock()
+	m, ok := s.mammoths.Map()[mammothID]
 	if !ok {
-		s.mammothsMu.Unlock()
+		s.mammoths.Unlock()
 		c.log.Warn("tame: mammoth not found")
 		return
 	}
@@ -20,30 +20,30 @@ func (s *Server) handleTameMammoth(c *Client, mammothID string) {
 	dy := float64(m.Pos.Y - ps.Y)
 	dz := float64(m.Pos.Z - ps.Z)
 	if dx*dx+dy*dy+dz*dz > 5.0*5.0 {
-		s.mammothsMu.Unlock()
+		s.mammoths.Unlock()
 		c.log.Warn("tame: too far")
 		return
 	}
 
 	if !m.Tamed {
 		m.Tamed = true
-		s.mammothsMu.Unlock()
+		s.mammoths.Unlock()
 		if !c.consumeItem("fruit") {
 			// откатываем
-			s.mammothsMu.Lock()
+			s.mammoths.Lock()
 			m.Tamed = false
-			s.mammothsMu.Unlock()
+			s.mammoths.Unlock()
 			return
 		}
 		c.log.Info("mammoth tamed", "id", mammothID)
 	} else {
 		if !c.consumeItem("fruit") {
-			s.mammothsMu.Unlock()
+			s.mammoths.Unlock()
 			return
 		}
 		m.FedCount++
 		fed := m.FedCount
-		s.mammothsMu.Unlock()
+		s.mammoths.Unlock()
 		c.log.Info("mammoth fed", "id", mammothID, "count", fed)
 	}
 
@@ -59,10 +59,10 @@ func (s *Server) handleTameMammoth(c *Client, mammothID string) {
 func (s *Server) handleLeashMammoth(c *Client, mammothID string) {
 	ps := c.State()
 
-	s.mammothsMu.Lock()
-	m, ok := s.mammoths[mammothID]
+	s.mammoths.Lock()
+	m, ok := s.mammoths.Map()[mammothID]
 	if !ok {
-		s.mammothsMu.Unlock()
+		s.mammoths.Unlock()
 		c.log.Warn("leash: not found")
 		return
 	}
@@ -70,24 +70,24 @@ func (s *Server) handleLeashMammoth(c *Client, mammothID string) {
 	dy := float64(m.Pos.Y - ps.Y)
 	dz := float64(m.Pos.Z - ps.Z)
 	if dx*dx+dy*dy+dz*dz > 5.0*5.0 {
-		s.mammothsMu.Unlock()
+		s.mammoths.Unlock()
 		c.log.Warn("leash: too far")
 		return
 	}
 	if !m.Tamed {
-		s.mammothsMu.Unlock()
+		s.mammoths.Unlock()
 		c.log.Warn("leash: not tamed")
 		return
 	}
 	myID := c.ID
 	if m.LeashedTo == myID {
 		m.LeashedTo = ""
-		s.mammothsMu.Unlock()
+		s.mammoths.Unlock()
 		c.log.Info("mammoth unleashed", "id", mammothID)
 		return
 	}
 	m.LeashedTo = myID
-	s.mammothsMu.Unlock()
+	s.mammoths.Unlock()
 
 	c.log.Info("mammoth leashed", "id", mammothID)
 }
@@ -95,10 +95,10 @@ func (s *Server) handleLeashMammoth(c *Client, mammothID string) {
 func (s *Server) handleSaddleMammoth(c *Client, mammothID string) {
 	ps := c.State()
 
-	s.mammothsMu.Lock()
-	m, ok := s.mammoths[mammothID]
+	s.mammoths.Lock()
+	m, ok := s.mammoths.Map()[mammothID]
 	if !ok {
-		s.mammothsMu.Unlock()
+		s.mammoths.Unlock()
 		c.log.Warn("saddle: not found")
 		return
 	}
@@ -106,38 +106,38 @@ func (s *Server) handleSaddleMammoth(c *Client, mammothID string) {
 	dy := float64(m.Pos.Y - ps.Y)
 	dz := float64(m.Pos.Z - ps.Z)
 	if dx*dx+dy*dy+dz*dz > 5.0*5.0 {
-		s.mammothsMu.Unlock()
+		s.mammoths.Unlock()
 		c.log.Warn("saddle: too far")
 		return
 	}
 	if !m.Tamed {
-		s.mammothsMu.Unlock()
+		s.mammoths.Unlock()
 		c.log.Warn("saddle: not tamed")
 		return
 	}
 	if m.Baby {
-		s.mammothsMu.Unlock()
+		s.mammoths.Unlock()
 		c.log.Warn("saddle: baby")
 		return
 	}
 	if !m.Saddle {
 		// ставим: нужен предмет
 		if !c.consumeItem("saddle") {
-			s.mammothsMu.Unlock()
+			s.mammoths.Unlock()
 			return
 		}
 		m.Saddle = true
-		s.mammothsMu.Unlock()
+		s.mammoths.Unlock()
 		c.log.Info("saddle installed", "id", mammothID)
 	} else {
 		// снимаем
 		if m.RiderID != "" {
-			s.mammothsMu.Unlock()
+			s.mammoths.Unlock()
 			c.log.Warn("saddle: rider on it")
 			return
 		}
 		m.Saddle = false
-		s.mammothsMu.Unlock()
+		s.mammoths.Unlock()
 		c.addItem("saddle")
 		c.log.Info("saddle removed", "id", mammothID)
 	}
@@ -154,22 +154,22 @@ func (s *Server) handleSaddleMammoth(c *Client, mammothID string) {
 func (s *Server) handleRideMammoth(c *Client, mammothID string) {
 	ps := c.State()
 
-	s.mammothsMu.Lock()
-	for _, m := range s.mammoths {
+	s.mammoths.Lock()
+	for _, m := range s.mammoths.Map() {
 		if m.RiderID == c.ID {
 			m.RiderID = ""
-			s.mammothsMu.Unlock()
+			s.mammoths.Unlock()
 			c.log.Info("dismounted")
 			return
 		}
 	}
 	if mammothID == "" {
-		s.mammothsMu.Unlock()
+		s.mammoths.Unlock()
 		return
 	}
-	m, ok := s.mammoths[mammothID]
+	m, ok := s.mammoths.Map()[mammothID]
 	if !ok {
-		s.mammothsMu.Unlock()
+		s.mammoths.Unlock()
 		c.log.Warn("ride: not found")
 		return
 	}
@@ -177,17 +177,17 @@ func (s *Server) handleRideMammoth(c *Client, mammothID string) {
 	dy := float64(m.Pos.Y - ps.Y)
 	dz := float64(m.Pos.Z - ps.Z)
 	if dx*dx+dy*dy+dz*dz > 6.0*6.0 {
-		s.mammothsMu.Unlock()
+		s.mammoths.Unlock()
 		c.log.Warn("ride: too far")
 		return
 	}
 	if !m.Tamed || !m.Saddle || m.RiderID != "" {
-		s.mammothsMu.Unlock()
+		s.mammoths.Unlock()
 		c.log.Warn("ride: not ready")
 		return
 	}
 	m.RiderID = c.ID
-	s.mammothsMu.Unlock()
+	s.mammoths.Unlock()
 	c.log.Info("mounted", "id", mammothID)
 }
 
@@ -208,10 +208,10 @@ func (s *Server) handleHitMammoth(c *Client, mammothID string) {
 	c.lastHitAt = now
 
 	// Валидация: мамонт существует.
-	s.mammothsMu.Lock()
-	m, ok := s.mammoths[mammothID]
+	s.mammoths.Lock()
+	m, ok := s.mammoths.Map()[mammothID]
 	if !ok {
-		s.mammothsMu.Unlock()
+		s.mammoths.Unlock()
 		c.log.Warn("hit rejected: mammoth not found")
 		return
 	}
@@ -224,7 +224,7 @@ func (s *Server) handleHitMammoth(c *Client, mammothID string) {
 	dist2 := dx*dx + dy*dy + dz*dz
 	const maxD2 float32 = 80.0 * 80.0
 	if dist2 > maxD2 {
-		s.mammothsMu.Unlock()
+		s.mammoths.Unlock()
 		c.log.Warn("hit rejected: too far", "d2", dist2)
 		return
 	}
@@ -234,14 +234,14 @@ func (s *Server) handleHitMammoth(c *Client, mammothID string) {
 	killed := m.HP <= 0
 	if killed {
 		meatPos = m.Pos
-		delete(s.mammoths, mammothID)
+		delete(s.mammoths.Map(), mammothID)
 	}
-	s.mammothsMu.Unlock()
+	s.mammoths.Unlock()
 
 	if killed {
-		s.resourcesMu.Lock()
+		s.resources.Lock()
 		meatID := newID()
-		s.resources[meatID] = protocol.Resource{
+		s.resources.Map()[meatID] = protocol.Resource{
 			ID:   meatID,
 			Type: "meat",
 			X:    meatPos.X,
@@ -250,14 +250,14 @@ func (s *Server) handleHitMammoth(c *Client, mammothID string) {
 		}
 		// Небольшой сдвиг, чтобы копьё не совпадало с мясом и его можно было подобрать отдельно.
 		spearID := newID()
-		s.resources[spearID] = protocol.Resource{
+		s.resources.Map()[spearID] = protocol.Resource{
 			ID:   spearID,
 			Type: "spear",
 			X:    meatPos.X + 1.5,
 			Y:    meatPos.Y,
 			Z:    meatPos.Z + 1.5,
 		}
-		s.resourcesMu.Unlock()
+		s.resources.Unlock()
 		c.log.Info("mammoth KILLED", "id", mammothID)
 	} else {
 		c.log.Info("mammoth hit", "id", mammothID, "hp", m.HP)

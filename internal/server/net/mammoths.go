@@ -48,7 +48,7 @@ func (s *Server) spawnMammoths(n int) {
 		if i%2 == 1 {
 			sex = "f"
 		}
-		s.mammoths[id] = &Mammoth{
+		s.mammoths.Map()[id] = &Mammoth{
 			ID:  id,
 			Pos: protocol.Vector3{X: x, Y: y, Z: z},
 			HP:  1,
@@ -62,10 +62,10 @@ func (s *Server) spawnMammoths(n int) {
 func (s *Server) tickMammoths(dt float32) {
 	players := s.collectNearPlayers()
 
-	s.mammothsMu.Lock()
-	defer s.mammothsMu.Unlock()
+	s.mammoths.Lock()
+	defer s.mammoths.Unlock()
 
-	for _, m := range s.mammoths {
+	for _, m := range s.mammoths.Map() {
 		switch {
 		case m.RiderID != "":
 			tickRiddenMammoth(m, players)

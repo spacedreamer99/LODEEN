@@ -40,9 +40,9 @@ func (s *Server) handlePlaceSolar(c *Client, p protocol.PlaceSolar) {
 		return
 	}
 	id := newID()
-	s.solarMu.Lock()
-	s.solar[id] = &Solar{ID: id, Pos: protocol.Vector3{X: p.X, Y: p.Y, Z: p.Z}, Yaw: p.Yaw}
-	s.solarMu.Unlock()
+	s.solar.Lock()
+	s.solar.Map()[id] = &Solar{ID: id, Pos: protocol.Vector3{X: p.X, Y: p.Y, Z: p.Z}, Yaw: p.Yaw}
+	s.solar.Unlock()
 
 	c.mu.Lock()
 	inv := make(map[string]int, len(c.inventory))
@@ -59,12 +59,12 @@ func (s *Server) handlePlaceBattery(c *Client, p protocol.PlaceBattery) {
 		return
 	}
 	id := newID()
-	s.batteriesMu.Lock()
-	s.batteries[id] = &Battery{
+	s.batteries.Lock()
+	s.batteries.Map()[id] = &Battery{
 		ID: id, Pos: protocol.Vector3{X: p.X, Y: p.Y, Z: p.Z},
 		Yaw: p.Yaw, Energy: 0, MaxEnergy: batteryMaxEnergy,
 	}
-	s.batteriesMu.Unlock()
+	s.batteries.Unlock()
 
 	c.mu.Lock()
 	inv := make(map[string]int, len(c.inventory))
@@ -81,9 +81,9 @@ func (s *Server) handlePlaceFactory(c *Client, p protocol.PlaceFactory) {
 		return
 	}
 	id := newID()
-	s.factoriesMu.Lock()
-	s.factories[id] = &Factory{ID: id, Pos: protocol.Vector3{X: p.X, Y: p.Y, Z: p.Z}, Yaw: p.Yaw}
-	s.factoriesMu.Unlock()
+	s.factories.Lock()
+	s.factories.Map()[id] = &Factory{ID: id, Pos: protocol.Vector3{X: p.X, Y: p.Y, Z: p.Z}, Yaw: p.Yaw}
+	s.factories.Unlock()
 
 	c.mu.Lock()
 	inv := make(map[string]int, len(c.inventory))
@@ -116,7 +116,7 @@ var factoryRecipes = map[string]factoryRecipe{
 func (s *Server) nearestBatteryLocked(pos protocol.Vector3) *Battery {
 	var best *Battery
 	bestD2 := float32(energyLinkRadiusD2)
-	for _, b := range s.batteries {
+	for _, b := range s.batteries.Map() {
 		dx := b.Pos.X - pos.X
 		dy := b.Pos.Y - pos.Y
 		dz := b.Pos.Z - pos.Z
@@ -130,9 +130,9 @@ func (s *Server) nearestBatteryLocked(pos protocol.Vector3) *Battery {
 }
 
 func (s *Server) handleOpenFactory(c *Client, factoryID string) {
-	s.factoriesMu.RLock()
-	_, ok := s.factories[factoryID]
-	s.factoriesMu.RUnlock()
+	s.factories.RLock()
+	_, ok := s.factories.Map()[factoryID]
+	s.factories.RUnlock()
 	if !ok {
 		c.log.Warn("factory: not found")
 		return
@@ -141,9 +141,9 @@ func (s *Server) handleOpenFactory(c *Client, factoryID string) {
 }
 
 func (s *Server) handleCraftFactory(c *Client, factoryID, recipeID string) {
-	s.factoriesMu.RLock()
-	f, ok := s.factories[factoryID]
-	s.factoriesMu.RUnlock()
+	s.factories.RLock()
+	f, ok := s.factories.Map()[factoryID]
+	s.factories.RUnlock()
 	if !ok {
 		c.log.Warn("factory craft: not found")
 		return
@@ -167,21 +167,21 @@ func (s *Server) handleCraftFactory(c *Client, factoryID, recipeID string) {
 	c.mu.Unlock()
 
 	// Ищем батарею для питания.
-	s.batteriesMu.Lock()
+	s.batteries.Lock()
 	b := s.nearestBatteryLocked(f.Pos)
 	if b == nil {
-		s.batteriesMu.Unlock()
+		s.batteries.Unlock()
 		c.log.Warn("factory craft: no battery in range")
 		return
 	}
 	if b.Energy < r.energy {
-		s.batteriesMu.Unlock()
+		s.batteries.Unlock()
 		c.log.Warn("factory craft: not enough energy",
 			"have", b.Energy, "need", r.energy)
 		return
 	}
 	b.Energy -= r.energy
-	s.batteriesMu.Unlock()
+	s.batteries.Unlock()
 
 	// Списываем ресурсы и выдаём предмет.
 	c.mu.Lock()
@@ -205,12 +205,12 @@ func (s *Server) handleCraftFactory(c *Client, factoryID, recipeID string) {
 // tickEnergy — панели заряжают ближайшие батареи.
 func (s *Server) tickEnergy(dt float32) {
 	// Снимок панелей.
-	s.solarMu.RLock()
-	panels := make([]*Solar, 0, len(s.solar))
-	for _, p := range s.solar {
+	s.solar.RLock()
+	panels := make([]*Solar, 0, len(s.solar.Map()))
+	for _, p := range s.solar.Map() {
 		panels = append(panels, p)
 	}
-	s.solarMu.RUnlock()
+	s.solar.RUnlock()
 
 	if len(panels) == 0 {
 		return
@@ -220,8 +220,8 @@ func (s *Server) tickEnergy(dt float32) {
 	gain := float32(solarEnergyPerSec) * dt
 	energyPerPanel := int(gain * 100) // фиксированная точка: gain*100, чтобы копить копейки
 
-	s.batteriesMu.Lock()
-	defer s.batteriesMu.Unlock()
+	s.batteries.Lock()
+	defer s.batteries.Unlock()
 	for _, p := range panels {
 		b := s.nearestBatteryLocked(p.Pos)
 		if b == nil {

@@ -33,8 +33,8 @@ func (s *Server) handlePlaceBoat(c *Client, p protocol.PlaceBoat) {
 		return
 	}
 	id := newID()
-	s.boatsMu.Lock()
-	s.boats[id] = &Boat{
+	s.boats.Lock()
+	s.boats.Map()[id] = &Boat{
 		ID: id,
 		Pos: protocol.Vector3{
 			X: nx * protocol.SeaLevel,
@@ -43,7 +43,7 @@ func (s *Server) handlePlaceBoat(c *Client, p protocol.PlaceBoat) {
 		},
 		Yaw: p.Yaw,
 	}
-	s.boatsMu.Unlock()
+	s.boats.Unlock()
 	c.log.Info("boat placed", "id", id)
 
 	c.mu.Lock()
@@ -59,29 +59,29 @@ func (s *Server) handleEnterBoat(c *Client, boatID string) {
 	ps := c.State()
 
 	// Если уже в лодке/на мамонте — сойти.
-	s.boatsMu.Lock()
-	for _, b := range s.boats {
+	s.boats.Lock()
+	for _, b := range s.boats.Map() {
 		if b.RiderID == c.ID {
 			b.RiderID = ""
 		}
 	}
-	s.mammothsMu.Lock()
-	for _, m := range s.mammoths {
+	s.mammoths.Lock()
+	for _, m := range s.mammoths.Map() {
 		if m.RiderID == c.ID {
 			m.RiderID = ""
 		}
 	}
-	s.mammothsMu.Unlock()
+	s.mammoths.Unlock()
 
 	if boatID == "" {
-		s.boatsMu.Unlock()
+		s.boats.Unlock()
 		c.log.Info("dismounted boat")
 		return
 	}
 
-	b, ok := s.boats[boatID]
+	b, ok := s.boats.Map()[boatID]
 	if !ok {
-		s.boatsMu.Unlock()
+		s.boats.Unlock()
 		c.log.Warn("boat: not found")
 		return
 	}
@@ -89,24 +89,24 @@ func (s *Server) handleEnterBoat(c *Client, boatID string) {
 	dy := float64(b.Pos.Y - ps.Y)
 	dz := float64(b.Pos.Z - ps.Z)
 	if dx*dx+dy*dy+dz*dz > 8.0*8.0 {
-		s.boatsMu.Unlock()
+		s.boats.Unlock()
 		c.log.Warn("boat: too far")
 		return
 	}
 	if b.RiderID != "" {
-		s.boatsMu.Unlock()
+		s.boats.Unlock()
 		c.log.Warn("boat: occupied")
 		return
 	}
 	b.RiderID = c.ID
-	s.boatsMu.Unlock()
+	s.boats.Unlock()
 	c.log.Info("boat entered", "id", boatID)
 }
 
 func (s *Server) tickBoats() {
-	s.boatsMu.Lock()
-	defer s.boatsMu.Unlock()
-	for _, b := range s.boats {
+	s.boats.Lock()
+	defer s.boats.Unlock()
+	for _, b := range s.boats.Map() {
 		if b.RiderID == "" {
 			continue
 		}

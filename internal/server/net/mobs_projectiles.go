@@ -14,22 +14,22 @@ func (s *Server) tickProjectiles(dt float32) {
 	const projHitD2 = 1.5 * 1.5
 
 	// Снимок мобов ДО projMu — иначе deadlock с tickMobs.
-	s.mobsMu.RLock()
-	mobPos := make(map[string]protocol.Vector3, len(s.mobs))
-	for id, mo := range s.mobs {
+	s.mobs.RLock()
+	mobPos := make(map[string]protocol.Vector3, len(s.mobs.Map()))
+	for id, mo := range s.mobs.Map() {
 		mobPos[id] = mo.Pos
 	}
-	s.mobsMu.RUnlock()
+	s.mobs.RUnlock()
 
 	type mobHit struct {
 		id string
 	}
 	var mobHits []mobHit
 
-	s.projMu.Lock()
-	for id, p := range s.projectiles {
+	s.projectiles.Lock()
+	for id, p := range s.projectiles.Map() {
 		if now.Sub(p.SpawnAt) > projTTL {
-			delete(s.projectiles, id)
+			delete(s.projectiles.Map(), id)
 			continue
 		}
 		p.Pos.X += p.Dir.X * p.Speed * dt
@@ -54,7 +54,7 @@ func (s *Server) tickProjectiles(dt float32) {
 			if dx*dx+dy*dy+dz*dz < projHitD2 {
 				target.damage(mobAttackDamage)
 				s.log.Info("mob spear hit", "target", p.TargetID, "dmg", mobAttackDamage)
-				delete(s.projectiles, id)
+				delete(s.projectiles.Map(), id)
 			}
 			continue
 		}
@@ -66,12 +66,12 @@ func (s *Server) tickProjectiles(dt float32) {
 			dz := mp.Z - p.Pos.Z
 			if dx*dx+dy*dy+dz*dz < projHitD2 {
 				mobHits = append(mobHits, mobHit{id: p.TargetID})
-				delete(s.projectiles, id)
+				delete(s.projectiles.Map(), id)
 			}
 		}
 		// Если цель исчезла — снаряд летит дальше до TTL.
 	}
-	s.projMu.Unlock()
+	s.projectiles.Unlock()
 
 	// Применяем попадания в мобов.
 	if len(mobHits) > 0 {
@@ -82,9 +82,9 @@ func (s *Server) tickProjectiles(dt float32) {
 		}
 		var kills []killDrop
 
-		s.mobsMu.Lock()
+		s.mobs.Lock()
 		for _, h := range mobHits {
-			mo, ok := s.mobs[h.id]
+			mo, ok := s.mobs.Map()[h.id]
 			if !ok {
 				continue
 			}
@@ -95,17 +95,17 @@ func (s *Server) tickProjectiles(dt float32) {
 					kind:   mo.Kind,
 					mobInv: mo.Inventory,
 				})
-				delete(s.mobs, h.id)
+				delete(s.mobs.Map(), h.id)
 				s.log.Info("mob killed by projectile", "id", h.id, "kind", mo.Kind)
 			} else {
 				s.log.Info("mob hit by projectile", "id", h.id, "hp", mo.HP)
 			}
 		}
-		s.mobsMu.Unlock()
+		s.mobs.Unlock()
 
 		// Спавним дроп после unlock.
 		if len(kills) > 0 {
-			s.resourcesMu.Lock()
+			s.resources.Lock()
 			for _, k := range kills {
 				switch k.kind {
 				case "hostile":
@@ -118,7 +118,7 @@ func (s *Server) tickProjectiles(dt float32) {
 						pp := protocol.ClampToSurface(protocol.Vector3{
 							X: k.pos.X + dx, Y: k.pos.Y, Z: k.pos.Z + dz,
 						})
-						s.resources[rid] = protocol.Resource{
+						s.resources.Map()[rid] = protocol.Resource{
 							ID: rid, Type: "spear",
 							X: pp.X, Y: pp.Y, Z: pp.Z,
 						}
@@ -134,7 +134,7 @@ func (s *Server) tickProjectiles(dt float32) {
 							pp := protocol.ClampToSurface(protocol.Vector3{
 								X: k.pos.X + dx, Y: k.pos.Y, Z: k.pos.Z + dz,
 							})
-							s.resources[rid] = protocol.Resource{
+							s.resources.Map()[rid] = protocol.Resource{
 								ID: rid, Type: itemType,
 								X: pp.X, Y: pp.Y, Z: pp.Z,
 							}
@@ -142,7 +142,7 @@ func (s *Server) tickProjectiles(dt float32) {
 					}
 				}
 			}
-			s.resourcesMu.Unlock()
+			s.resources.Unlock()
 		}
 	}
 }

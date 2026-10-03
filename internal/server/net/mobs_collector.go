@@ -13,8 +13,8 @@ func (s *Server) tickCollector(m *Mob, dt float32) {
 	var target *protocol.Resource
 	bestD2 := float32(collectorSearchD2)
 
-	s.resourcesMu.RLock()
-	for _, res := range s.resources {
+	s.resources.RLock()
+	for _, res := range s.resources.Map() {
 		dx := res.X - m.Pos.X
 		dy := res.Y - m.Pos.Y
 		dz := res.Z - m.Pos.Z
@@ -25,7 +25,7 @@ func (s *Server) tickCollector(m *Mob, dt float32) {
 			bestD2 = d2
 		}
 	}
-	s.resourcesMu.RUnlock()
+	s.resources.RUnlock()
 
 	if target == nil {
 		return
@@ -33,12 +33,12 @@ func (s *Server) tickCollector(m *Mob, dt float32) {
 
 	// Подобрать, если рядом.
 	if bestD2 < float32(collectorPickD2) {
-		s.resourcesMu.Lock()
-		if _, ok := s.resources[target.ID]; ok {
-			delete(s.resources, target.ID)
+		s.resources.Lock()
+		if _, ok := s.resources.Map()[target.ID]; ok {
+			delete(s.resources.Map(), target.ID)
 			m.Inventory[target.Type]++
 		}
-		s.resourcesMu.Unlock()
+		s.resources.Unlock()
 		return
 	}
 

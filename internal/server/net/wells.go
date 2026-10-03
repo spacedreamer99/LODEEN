@@ -23,7 +23,7 @@ func (s *Server) spawnWells(n int) {
 		z := float32(math.Sin(phi) * math.Sin(theta))
 		pos := protocol.ClampToSurface(protocol.Vector3{X: x, Y: y, Z: z})
 		id := newID()
-		s.wells[id] = &protocol.Well{
+		s.wells.Map()[id] = &protocol.Well{
 			ID: id,
 			X:  pos.X,
 			Y:  pos.Y,
@@ -34,9 +34,9 @@ func (s *Server) spawnWells(n int) {
 }
 
 func (s *Server) handleTakeWater(c *Client, wellID string) {
-	s.wellsMu.RLock()
-	w, ok := s.wells[wellID]
-	s.wellsMu.RUnlock()
+	s.wells.RLock()
+	w, ok := s.wells.Map()[wellID]
+	s.wells.RUnlock()
 	if !ok {
 		c.log.Warn("take water: well not found", "well", wellID)
 		return

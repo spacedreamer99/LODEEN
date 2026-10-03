@@ -123,21 +123,21 @@ func (s *Server) handleCraft(c *Client, recipe string) {
 func (s *Server) handlePickup(c *Client, resourceID string) {
 	ps := c.State()
 
-	s.resourcesMu.Lock()
-	r, ok := s.resources[resourceID]
+	s.resources.Lock()
+	r, ok := s.resources.Map()[resourceID]
 	if !ok || r.Type == "seed" {
-		s.resourcesMu.Unlock()
+		s.resources.Unlock()
 		return
 	}
 	dx := float64(r.X - ps.X)
 	dy := float64(r.Y - ps.Y)
 	dz := float64(r.Z - ps.Z)
 	if dx*dx+dy*dy+dz*dz > pickupRadius*pickupRadius {
-		s.resourcesMu.Unlock()
+		s.resources.Unlock()
 		return
 	}
-	delete(s.resources, resourceID)
-	s.resourcesMu.Unlock()
+	delete(s.resources.Map(), resourceID)
+	s.resources.Unlock()
 
 	inv := c.addItem(r.Type)
 	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})

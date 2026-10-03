@@ -8,10 +8,10 @@ import (
 )
 
 func (s *Server) handleHitMob(c *Client, mobID string) {
-	s.mobsMu.Lock()
-	m, ok := s.mobs[mobID]
+	s.mobs.Lock()
+	m, ok := s.mobs.Map()[mobID]
 	if !ok {
-		s.mobsMu.Unlock()
+		s.mobs.Unlock()
 		c.log.Warn("hit mob: not found")
 		return
 	}
@@ -21,12 +21,12 @@ func (s *Server) handleHitMob(c *Client, mobID string) {
 	dy := float64(m.Pos.Y - ps.Y)
 	dz := float64(m.Pos.Z - ps.Z)
 	if dx*dx+dy*dy+dz*dz > 100.0*100.0 {
-		s.mobsMu.Unlock()
+		s.mobs.Unlock()
 		c.log.Warn("hit mob: too far")
 		return
 	}
 	if !c.consumeItem("spear") {
-		s.mobsMu.Unlock()
+		s.mobs.Unlock()
 		return
 	}
 	m.HP--
@@ -38,12 +38,12 @@ func (s *Server) handleHitMob(c *Client, mobID string) {
 	kind := m.Kind
 	mobInv := m.Inventory
 	if killed {
-		delete(s.mobs, mobID)
+		delete(s.mobs.Map(), mobID)
 	}
-	s.mobsMu.Unlock()
+	s.mobs.Unlock()
 
 	if killed {
-		s.resourcesMu.Lock()
+		s.resources.Lock()
 		if kind == "pink" {
 			// Розовый — без дропа.
 		} else if kind == "collector" {
@@ -60,7 +60,7 @@ func (s *Server) handleHitMob(c *Client, mobID string) {
 						Y: pos.Y,
 						Z: pos.Z + dz,
 					})
-					s.resources[rid] = protocol.Resource{
+					s.resources.Map()[rid] = protocol.Resource{
 						ID:   rid,
 						Type: itemType,
 						X:    pp.X,
@@ -82,7 +82,7 @@ func (s *Server) handleHitMob(c *Client, mobID string) {
 					Y: pos.Y,
 					Z: pos.Z + dz,
 				})
-				s.resources[rid] = protocol.Resource{
+				s.resources.Map()[rid] = protocol.Resource{
 					ID:   rid,
 					Type: "spear",
 					X:    pp.X,
@@ -91,7 +91,7 @@ func (s *Server) handleHitMob(c *Client, mobID string) {
 				}
 			}
 		}
-		s.resourcesMu.Unlock()
+		s.resources.Unlock()
 		c.log.Info("mob killed", "id", mobID, "kind", kind)
 	} else {
 		c.log.Info("mob hit", "id", mobID, "hp", m.HP, "kind", kind)
@@ -108,25 +108,25 @@ func (s *Server) handleHitMob(c *Client, mobID string) {
 }
 
 func (s *Server) handleAcceptContract(c *Client, mobID, contractID string) {
-	s.mobsMu.Lock()
-	m, ok := s.mobs[mobID]
+	s.mobs.Lock()
+	m, ok := s.mobs.Map()[mobID]
 	if !ok {
-		s.mobsMu.Unlock()
+		s.mobs.Unlock()
 		c.log.Warn("contract: mob not found")
 		return
 	}
 	if m.Kind != "pink" {
-		s.mobsMu.Unlock()
+		s.mobs.Unlock()
 		c.log.Warn("contract: not a pink mob")
 		return
 	}
 	if m.Contract != "" {
-		s.mobsMu.Unlock()
+		s.mobs.Unlock()
 		c.log.Warn("contract: mob already busy", "existing", m.Contract)
 		return
 	}
 	if contractID != "gather4" && contractID != "guard" {
-		s.mobsMu.Unlock()
+		s.mobs.Unlock()
 		c.log.Warn("contract: unknown id", "id", contractID)
 		return
 	}
@@ -135,7 +135,7 @@ func (s *Server) handleAcceptContract(c *Client, mobID, contractID string) {
 	switch contractID {
 	case "gather4":
 		if !c.consumeItem("fruit") {
-			s.mobsMu.Unlock()
+			s.mobs.Unlock()
 			c.log.Warn("contract: no fruit")
 			return
 		}
@@ -147,7 +147,7 @@ func (s *Server) handleAcceptContract(c *Client, mobID, contractID string) {
 		}
 		c.mu.Unlock()
 		if !hasSpear {
-			s.mobsMu.Unlock()
+			s.mobs.Unlock()
 			c.log.Warn("contract: not enough spears")
 			return
 		}
@@ -158,7 +158,7 @@ func (s *Server) handleAcceptContract(c *Client, mobID, contractID string) {
 	if contractID == "gather4" {
 		m.Inventory = make(map[string]int)
 	}
-	s.mobsMu.Unlock()
+	s.mobs.Unlock()
 
 	c.log.Info("contract accepted", "mob", mobID, "contract", contractID)
 

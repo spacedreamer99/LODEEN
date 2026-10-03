@@ -19,10 +19,10 @@ func (s *Server) collectPlayers() []protocol.PlayerState {
 
 // collectResources — подобранные/разбросанные ресурсы на поверхности.
 func (s *Server) collectResources() []protocol.Resource {
-	s.resourcesMu.RLock()
-	defer s.resourcesMu.RUnlock()
-	out := make([]protocol.Resource, 0, len(s.resources))
-	for _, r := range s.resources {
+	s.resources.RLock()
+	defer s.resources.RUnlock()
+	out := make([]protocol.Resource, 0, len(s.resources.Map()))
+	for _, r := range s.resources.Map() {
 		out = append(out, r)
 	}
 	return out
@@ -30,10 +30,10 @@ func (s *Server) collectResources() []protocol.Resource {
 
 // collectWells — колодцы (вода).
 func (s *Server) collectWells() []protocol.Well {
-	s.wellsMu.RLock()
-	defer s.wellsMu.RUnlock()
-	out := make([]protocol.Well, 0, len(s.wells))
-	for _, w := range s.wells {
+	s.wells.RLock()
+	defer s.wells.RUnlock()
+	out := make([]protocol.Well, 0, len(s.wells.Map()))
+	for _, w := range s.wells.Map() {
 		out = append(out, *w)
 	}
 	return out
@@ -41,10 +41,10 @@ func (s *Server) collectWells() []protocol.Well {
 
 // collectProjectiles — летящие снаряды мобов.
 func (s *Server) collectProjectiles() []protocol.MobProjectile {
-	s.projMu.RLock()
-	defer s.projMu.RUnlock()
-	out := make([]protocol.MobProjectile, 0, len(s.projectiles))
-	for _, p := range s.projectiles {
+	s.projectiles.RLock()
+	defer s.projectiles.RUnlock()
+	out := make([]protocol.MobProjectile, 0, len(s.projectiles.Map()))
+	for _, p := range s.projectiles.Map() {
 		out = append(out, protocol.MobProjectile{
 			ID: p.ID,
 			X:  p.Pos.X, Y: p.Pos.Y, Z: p.Pos.Z,
@@ -56,10 +56,10 @@ func (s *Server) collectProjectiles() []protocol.MobProjectile {
 
 // collectMobs — хосты/мобы с их контрактами.
 func (s *Server) collectMobs() []protocol.Mob {
-	s.mobsMu.RLock()
-	defer s.mobsMu.RUnlock()
-	out := make([]protocol.Mob, 0, len(s.mobs))
-	for _, m := range s.mobs {
+	s.mobs.RLock()
+	defer s.mobs.RUnlock()
+	out := make([]protocol.Mob, 0, len(s.mobs.Map()))
+	for _, m := range s.mobs.Map() {
 		out = append(out, protocol.Mob{
 			ID: m.ID,
 			X:  m.Pos.X, Y: m.Pos.Y, Z: m.Pos.Z,
@@ -74,10 +74,10 @@ func (s *Server) collectMobs() []protocol.Mob {
 
 // collectBoats — лодки с наездниками.
 func (s *Server) collectBoats() []protocol.Boat {
-	s.boatsMu.RLock()
-	defer s.boatsMu.RUnlock()
-	out := make([]protocol.Boat, 0, len(s.boats))
-	for _, b := range s.boats {
+	s.boats.RLock()
+	defer s.boats.RUnlock()
+	out := make([]protocol.Boat, 0, len(s.boats.Map()))
+	for _, b := range s.boats.Map() {
 		out = append(out, protocol.Boat{
 			ID: b.ID,
 			X:  b.Pos.X, Y: b.Pos.Y, Z: b.Pos.Z,
@@ -90,10 +90,10 @@ func (s *Server) collectBoats() []protocol.Boat {
 
 // collectHouses — дома (state двери).
 func (s *Server) collectHouses() []protocol.House {
-	s.housesMu.RLock()
-	defer s.housesMu.RUnlock()
-	out := make([]protocol.House, 0, len(s.houses))
-	for _, h := range s.houses {
+	s.houses.RLock()
+	defer s.houses.RUnlock()
+	out := make([]protocol.House, 0, len(s.houses.Map()))
+	for _, h := range s.houses.Map() {
 		out = append(out, protocol.House{
 			ID: h.ID,
 			X:  h.Pos.X, Y: h.Pos.Y, Z: h.Pos.Z,
@@ -106,10 +106,10 @@ func (s *Server) collectHouses() []protocol.House {
 
 // collectSolar — солнечные панели.
 func (s *Server) collectSolar() []protocol.Solar {
-	s.solarMu.RLock()
-	defer s.solarMu.RUnlock()
-	out := make([]protocol.Solar, 0, len(s.solar))
-	for _, sl := range s.solar {
+	s.solar.RLock()
+	defer s.solar.RUnlock()
+	out := make([]protocol.Solar, 0, len(s.solar.Map()))
+	for _, sl := range s.solar.Map() {
 		out = append(out, protocol.Solar{
 			ID: sl.ID, X: sl.Pos.X, Y: sl.Pos.Y, Z: sl.Pos.Z, Yaw: sl.Yaw,
 		})
@@ -119,10 +119,10 @@ func (s *Server) collectSolar() []protocol.Solar {
 
 // collectBatteries — батареи с уровнем энергии.
 func (s *Server) collectBatteries() []protocol.Battery {
-	s.batteriesMu.RLock()
-	defer s.batteriesMu.RUnlock()
-	out := make([]protocol.Battery, 0, len(s.batteries))
-	for _, b := range s.batteries {
+	s.batteries.RLock()
+	defer s.batteries.RUnlock()
+	out := make([]protocol.Battery, 0, len(s.batteries.Map()))
+	for _, b := range s.batteries.Map() {
 		out = append(out, protocol.Battery{
 			ID: b.ID, X: b.Pos.X, Y: b.Pos.Y, Z: b.Pos.Z, Yaw: b.Yaw,
 			Energy: b.Energy, MaxEnergy: b.MaxEnergy,
@@ -133,10 +133,10 @@ func (s *Server) collectBatteries() []protocol.Battery {
 
 // collectFactories — фабрики с прогрессом крафта.
 func (s *Server) collectFactories() []protocol.Factory {
-	s.factoriesMu.RLock()
-	defer s.factoriesMu.RUnlock()
-	out := make([]protocol.Factory, 0, len(s.factories))
-	for _, f := range s.factories {
+	s.factories.RLock()
+	defer s.factories.RUnlock()
+	out := make([]protocol.Factory, 0, len(s.factories.Map()))
+	for _, f := range s.factories.Map() {
 		out = append(out, protocol.Factory{
 			ID: f.ID, X: f.Pos.X, Y: f.Pos.Y, Z: f.Pos.Z, Yaw: f.Yaw,
 			Crafting: f.Crafting, Progress: f.Progress,
@@ -172,10 +172,10 @@ func (s *Server) collectRockets() []protocol.Rocket {
 
 // collectMammoths — мамонты (приручение, разведение, сёдла).
 func (s *Server) collectMammoths() []protocol.Mammoth {
-	s.mammothsMu.RLock()
-	defer s.mammothsMu.RUnlock()
-	out := make([]protocol.Mammoth, 0, len(s.mammoths))
-	for _, m := range s.mammoths {
+	s.mammoths.RLock()
+	defer s.mammoths.RUnlock()
+	out := make([]protocol.Mammoth, 0, len(s.mammoths.Map()))
+	for _, m := range s.mammoths.Map() {
 		out = append(out, protocol.Mammoth{
 			ID: m.ID,
 			X:  m.Pos.X, Y: m.Pos.Y, Z: m.Pos.Z,

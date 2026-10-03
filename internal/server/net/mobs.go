@@ -46,7 +46,7 @@ func (s *Server) spawnMobs(n int) {
 			kind = "pink"
 			hp = 10
 		}
-		s.mobs[id] = &Mob{
+		s.mobs.Map()[id] = &Mob{
 			ID:        id,
 			Pos:       pos,
 			HP:        hp,
@@ -86,8 +86,8 @@ func (s *Server) findPlayerState(id string) *protocol.PlayerState {
 }
 
 func (s *Server) tickMobs(dt float32) {
-	s.mobsMu.Lock()
-	defer s.mobsMu.Unlock()
+	s.mobs.Lock()
+	defer s.mobs.Unlock()
 
 	// Снимок игроков
 	type pInfo struct {
@@ -102,7 +102,7 @@ func (s *Server) tickMobs(dt float32) {
 	s.mu.RUnlock()
 
 	now := time.Now()
-	for _, m := range s.mobs {
+	for _, m := range s.mobs.Map() {
 		// Розовый — убегает от серых и красных.
 		if m.Kind == "pink" {
 			s.tickPink(m, dt)
@@ -163,8 +163,8 @@ func (s *Server) tickMobs(dt float32) {
 			if now.Sub(m.LastAttackAt) >= mobAttackCooldown {
 				m.LastAttackAt = now
 				pid := newID()
-				s.projMu.Lock()
-				s.projectiles[pid] = &Projectile{
+				s.projectiles.Lock()
+				s.projectiles.Map()[pid] = &Projectile{
 					ID:         pid,
 					Pos:        m.Pos,
 					Dir:        protocol.Vector3{X: dx / d, Y: dy / d, Z: dz / d},
@@ -173,7 +173,7 @@ func (s *Server) tickMobs(dt float32) {
 					TargetID:   nearest.client.ID,
 					SpawnAt:    now,
 				}
-				s.projMu.Unlock()
+				s.projectiles.Unlock()
 				s.log.Info("mob throws spear", "mob", m.ID, "target", nearest.client.ID, "dist", d)
 			}
 		}
