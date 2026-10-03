@@ -26,13 +26,13 @@ func (s *Server) handlePlaceHouse(c *Client, p protocol.PlaceHouse) {
 	c.mu.Unlock()
 
 	id := newID()
-	s.housesMu.Lock()
-	s.houses[id] = &House{
+	s.houses.Lock()
+	s.houses.Map()[id] = &House{
 		ID:  id,
 		Pos: protocol.Vector3{X: p.X, Y: p.Y, Z: p.Z},
 		Yaw: p.Yaw,
 	}
-	s.housesMu.Unlock()
+	s.houses.Unlock()
 
 	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
 	c.log.Info("house placed", "id", id)
@@ -41,10 +41,10 @@ func (s *Server) handlePlaceHouse(c *Client, p protocol.PlaceHouse) {
 func (s *Server) handleToggleDoor(c *Client, houseID string) {
 	ps := c.State()
 
-	s.housesMu.Lock()
-	h, ok := s.houses[houseID]
+	s.houses.Lock()
+	h, ok := s.houses.Map()[houseID]
 	if !ok {
-		s.housesMu.Unlock()
+		s.houses.Unlock()
 		c.log.Warn("door: house not found")
 		return
 	}
@@ -52,13 +52,13 @@ func (s *Server) handleToggleDoor(c *Client, houseID string) {
 	dy := float64(h.Pos.Y - ps.Y)
 	dz := float64(h.Pos.Z - ps.Z)
 	if dx*dx+dy*dy+dz*dz > 8.0*8.0 {
-		s.housesMu.Unlock()
+		s.houses.Unlock()
 		c.log.Warn("door: too far")
 		return
 	}
 	h.DoorOpen = !h.DoorOpen
 	open := h.DoorOpen
-	s.housesMu.Unlock()
+	s.houses.Unlock()
 
 	c.log.Info("door toggled", "id", houseID, "open", open)
 }

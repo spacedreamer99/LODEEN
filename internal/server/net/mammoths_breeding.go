@@ -11,11 +11,11 @@ func (s *Server) tickBreeding() {
 	const closeD2 = 5.0 * 5.0
 	now := time.Now()
 
-	s.mammothsMu.Lock()
-	defer s.mammothsMu.Unlock()
+	s.mammoths.Lock()
+	defer s.mammoths.Unlock()
 
 	// 1. Рост мамонтят
-	for _, m := range s.mammoths {
+	for _, m := range s.mammoths.Map() {
 		if m.Baby && !m.BornAt.IsZero() && now.Sub(m.BornAt) >= babyGrowTime {
 			m.Baby = false
 			s.log.Info("mammoth grew up", "id", m.ID)
@@ -24,7 +24,7 @@ func (s *Server) tickBreeding() {
 
 	// 2. Кандидаты — приручённые взрослые, накормленные 4+
 	var males, females []*Mammoth
-	for _, m := range s.mammoths {
+	for _, m := range s.mammoths.Map() {
 		if !m.Tamed || m.Baby || m.FedCount < 4 {
 			continue
 		}
@@ -54,7 +54,7 @@ func (s *Server) tickBreeding() {
 				Y: (male.Pos.Y + female.Pos.Y) / 2,
 				Z: (male.Pos.Z + female.Pos.Z) / 2,
 			}
-			s.mammoths[babyID] = &Mammoth{
+			s.mammoths.Map()[babyID] = &Mammoth{
 				ID:     babyID,
 				Pos:    mid,
 				HP:     1,

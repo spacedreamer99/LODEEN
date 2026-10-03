@@ -49,37 +49,27 @@ type Server struct {
 	mu      sync.RWMutex
 	clients map[string]*Client
 
-	resourcesMu sync.RWMutex
-	resources   map[string]protocol.Resource
+	resources *store[protocol.Resource]
 
-	mammothsMu sync.RWMutex
-	mammoths   map[string]*Mammoth
+	mammoths *store[*Mammoth]
 
-	wellsMu sync.RWMutex
-	wells   map[string]*protocol.Well
+	wells *store[*protocol.Well]
 
-	housesMu sync.RWMutex
-	houses   map[string]*House
+	houses *store[*House]
 
-	solarMu sync.RWMutex
-	solar   map[string]*Solar
+	solar *store[*Solar]
 
-	batteriesMu sync.RWMutex
-	batteries   map[string]*Battery
+	batteries *store[*Battery]
 
-	factoriesMu sync.RWMutex
-	factories   map[string]*Factory
+	factories *store[*Factory]
 
 	rockets *store[*Rocket]
 
-	boatsMu sync.RWMutex
-	boats   map[string]*Boat
+	boats *store[*Boat]
 
-	mobsMu sync.RWMutex
-	mobs   map[string]*Mob
+	mobs *store[*Mob]
 
-	projMu      sync.RWMutex
-	projectiles map[string]*Projectile
+	projectiles *store[*Projectile]
 
 	tick  uint64
 	world *WorldState
@@ -96,25 +86,25 @@ func New(addr string, tickRate int, log *slog.Logger, m *Metrics) *Server {
 		log:       log,
 		metrics:   m,
 		clients:   make(map[string]*Client),
-		resources: make(map[string]protocol.Resource),
+		resources: newStore[protocol.Resource](),
 		done:      make(chan struct{}),
 	}
-	s.mammoths = make(map[string]*Mammoth)
+	s.mammoths = newStore[*Mammoth]()
 	s.spawnResources(40)
 	s.spawnMammoths(5)
 
-	s.wells = make(map[string]*protocol.Well)
+	s.wells = newStore[*protocol.Well]()
 	s.spawnWells(6)
 
-	s.houses = make(map[string]*House)
-	s.solar = make(map[string]*Solar)
-	s.batteries = make(map[string]*Battery)
-	s.factories = make(map[string]*Factory)
+	s.houses = newStore[*House]()
+	s.solar = newStore[*Solar]()
+	s.batteries = newStore[*Battery]()
+	s.factories = newStore[*Factory]()
 	s.rockets = newStore[*Rocket]()
-	s.boats = make(map[string]*Boat)
-	s.mobs = make(map[string]*Mob)
+	s.boats = newStore[*Boat]()
+	s.mobs = newStore[*Mob]()
 	s.spawnMobs(5)
-	s.projectiles = make(map[string]*Projectile)
+	s.projectiles = newStore[*Projectile]()
 	s.world = NewWorldState()
 	return s
 }

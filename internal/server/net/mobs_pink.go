@@ -46,7 +46,7 @@ func (s *Server) tickPink(m *Mob, dt float32) {
 func (s *Server) pinkAutoShoot(m *Mob) {
 	var threat *Mob
 	bestD2 := float32(pinkShootRangeD2)
-	for _, other := range s.mobs {
+	for _, other := range s.mobs.Map() {
 		if other.ID == m.ID {
 			continue
 		}
@@ -77,8 +77,8 @@ func (s *Server) pinkAutoShoot(m *Mob) {
 	}
 	m.LastAttackAt = now
 	pid := newID()
-	s.projMu.Lock()
-	s.projectiles[pid] = &Projectile{
+	s.projectiles.Lock()
+	s.projectiles.Map()[pid] = &Projectile{
 		ID:  pid,
 		Pos: m.Pos,
 		Dir: protocol.Vector3{
@@ -91,7 +91,7 @@ func (s *Server) pinkAutoShoot(m *Mob) {
 		TargetID:   threat.ID,
 		SpawnAt:    now,
 	}
-	s.projMu.Unlock()
+	s.projectiles.Unlock()
 	s.log.Info("pink shoots hostile", "mob", m.ID, "target", threat.ID, "dist", d)
 }
 
@@ -99,7 +99,7 @@ func (s *Server) pinkAutoShoot(m *Mob) {
 func (s *Server) tickPinkFlee(m *Mob, dt float32) {
 	var threat *Mob
 	bestD2 := float32(pinkFleeD2)
-	for _, other := range s.mobs {
+	for _, other := range s.mobs.Map() {
 		if other.ID == m.ID {
 			continue
 		}
@@ -170,8 +170,8 @@ func (s *Server) tickPinkGather(m *Mob, dt float32) {
 	// Ищем ближайший ресурс.
 	var target *protocol.Resource
 	bestD2 := float32(pinkSearchD2)
-	s.resourcesMu.RLock()
-	for _, res := range s.resources {
+	s.resources.RLock()
+	for _, res := range s.resources.Map() {
 		dx := res.X - m.Pos.X
 		dy := res.Y - m.Pos.Y
 		dz := res.Z - m.Pos.Z
@@ -182,7 +182,7 @@ func (s *Server) tickPinkGather(m *Mob, dt float32) {
 			bestD2 = d2
 		}
 	}
-	s.resourcesMu.RUnlock()
+	s.resources.RUnlock()
 
 	if target == nil {
 		return
@@ -190,12 +190,12 @@ func (s *Server) tickPinkGather(m *Mob, dt float32) {
 
 	// Подобрать если рядом.
 	if bestD2 < float32(pinkPickD2) {
-		s.resourcesMu.Lock()
-		if _, ok := s.resources[target.ID]; ok {
-			delete(s.resources, target.ID)
+		s.resources.Lock()
+		if _, ok := s.resources.Map()[target.ID]; ok {
+			delete(s.resources.Map(), target.ID)
 			m.Inventory[target.Type]++
 		}
-		s.resourcesMu.Unlock()
+		s.resources.Unlock()
 		return
 	}
 
@@ -256,7 +256,7 @@ func (s *Server) tickPinkGuard(m *Mob, dt float32) {
 	// Ищем ближайшего красного в радиусе.
 	var target *Mob
 	bestD2 := float32(pinkGuardRangeD2)
-	for _, other := range s.mobs {
+	for _, other := range s.mobs.Map() {
 		if other.Kind != "hostile" {
 			continue
 		}

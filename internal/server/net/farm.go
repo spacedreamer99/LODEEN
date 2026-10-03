@@ -35,7 +35,7 @@ func (s *Server) spawnResources(n int) {
 			Y:    pos.Y,
 			Z:    pos.Z,
 		}
-		s.resources[res.ID] = res
+		s.resources.Map()[res.ID] = res
 	}
 	s.log.Info("spawned resources on surface", "count", n)
 }
@@ -59,15 +59,15 @@ func (s *Server) handlePlantSeed(c *Client, p protocol.PlantSeed) {
 	// Прижимаем seed к поверхности — иначе висит в воздухе на высоте камеры.
 	pos := protocol.ClampToSurface(protocol.Vector3{X: p.X, Y: p.Y, Z: p.Z})
 	id := newID()
-	s.resourcesMu.Lock()
-	s.resources[id] = protocol.Resource{
+	s.resources.Lock()
+	s.resources.Map()[id] = protocol.Resource{
 		ID:   id,
 		Type: "seed",
 		X:    pos.X,
 		Y:    pos.Y,
 		Z:    pos.Z,
 	}
-	s.resourcesMu.Unlock()
+	s.resources.Unlock()
 
 	c.mu.Lock()
 	inv := make(map[string]int, len(c.inventory))
@@ -82,33 +82,33 @@ func (s *Server) handlePlantSeed(c *Client, p protocol.PlantSeed) {
 func (s *Server) handleWaterPlant(c *Client, resourceID string) {
 	ps := c.State()
 
-	s.resourcesMu.Lock()
-	r, ok := s.resources[resourceID]
+	s.resources.Lock()
+	r, ok := s.resources.Map()[resourceID]
 	if !ok || r.Type != "seed" || r.Watered {
-		s.resourcesMu.Unlock()
+		s.resources.Unlock()
 		return
 	}
 	dx := float64(r.X - ps.X)
 	dy := float64(r.Y - ps.Y)
 	dz := float64(r.Z - ps.Z)
 	if dx*dx+dy*dy+dz*dz > pickupRadius*pickupRadius {
-		s.resourcesMu.Unlock()
+		s.resources.Unlock()
 		return
 	}
-	s.resourcesMu.Unlock()
+	s.resources.Unlock()
 
 	if !c.consumeItem("water") {
 		return
 	}
 
-	s.resourcesMu.Lock()
-	r, ok = s.resources[resourceID]
+	s.resources.Lock()
+	r, ok = s.resources.Map()[resourceID]
 	if ok && r.Type == "seed" && !r.Watered {
 		r.Watered = true
 		r.GrowAt = time.Now().Add(growDelay).UnixMilli()
-		s.resources[resourceID] = r
+		s.resources.Map()[resourceID] = r
 	}
-	s.resourcesMu.Unlock()
+	s.resources.Unlock()
 
 	c.mu.Lock()
 	inv := make(map[string]int, len(c.inventory))
@@ -122,17 +122,17 @@ func (s *Server) handleWaterPlant(c *Client, resourceID string) {
 
 func (s *Server) tickResources() {
 	now := time.Now().UnixMilli()
-	s.resourcesMu.Lock()
-	defer s.resourcesMu.Unlock()
-	for id, r := range s.resources {
+	s.resources.Lock()
+	defer s.resources.Unlock()
+	for id, r := range s.resources.Map() {
 		if r.Type != "seed" || !r.Watered || r.GrowAt > now {
 			continue
 		}
-		delete(s.resources, id)
+		delete(s.resources.Map(), id)
 		const harvestFruits = 2
 		for i := 0; i < harvestFruits; i++ {
 			fid := newID()
-			s.resources[fid] = protocol.Resource{
+			s.resources.Map()[fid] = protocol.Resource{
 				ID:   fid,
 				Type: "fruit",
 				X:    r.X + float32(i)*1.5,
