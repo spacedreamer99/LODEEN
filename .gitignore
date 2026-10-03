@@ -29,3 +29,6 @@ res/*.png~
 deploy/ansible/inventory/hosts.ini
 *.bak*
 *.dupfix
+assets_from_phone/
+*.bak
+*.bak_*
