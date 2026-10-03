@@ -13,7 +13,6 @@ type House struct {
 	DoorOpen bool
 }
 
-
 func (s *Server) handlePlaceHouse(c *Client, p protocol.PlaceHouse) {
 	if !c.consumeItem("house") {
 		c.log.Warn("house: no house item in inventory")
@@ -39,7 +38,6 @@ func (s *Server) handlePlaceHouse(c *Client, p protocol.PlaceHouse) {
 	c.log.Info("house placed", "id", id)
 }
 
-
 func (s *Server) handleToggleDoor(c *Client, houseID string) {
 	ps := c.State()
 
@@ -64,4 +62,3 @@ func (s *Server) handleToggleDoor(c *Client, houseID string) {
 
 	c.log.Info("door toggled", "id", houseID, "open", open)
 }
-

@@ -33,7 +33,6 @@ func (s *Server) spawnWells(n int) {
 	s.log.Info("spawned wells", "count", n)
 }
 
-
 func (s *Server) handleTakeWater(c *Client, wellID string) {
 	s.wellsMu.RLock()
 	w, ok := s.wells[wellID]
@@ -54,4 +53,3 @@ func (s *Server) handleTakeWater(c *Client, wellID string) {
 	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
 	c.log.Info("water taken", "well", wellID)
 }
-

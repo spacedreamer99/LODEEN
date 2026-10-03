@@ -27,7 +27,6 @@ type Mob struct {
 	DeliveredAt  time.Time
 }
 
-
 func (s *Server) spawnMobs(n int) {
 	for i := 0; i < n; i++ {
 		var b [16]byte
@@ -73,6 +72,7 @@ const mobAttackCooldown = 1500 * time.Millisecond
 const collectorSearchD2 = 40.0 * 40.0
 const collectorPickD2 = 2.5 * 2.5
 const collectorSpeed = 4.0
+
 // tickPink — розовый мирный моб. Убегает от серых и красных, но не от игрока.
 // Вызывается при удержании mobsMu.Lock() в tickMobs.
 const pinkFleeD2 = 15.0 * 15.0
@@ -208,7 +208,6 @@ func (s *Server) tickPinkGather(m *Mob, dt float32) {
 	for _, q := range m.Inventory {
 		total += q
 	}
-
 
 	// Если собрал 4+ — идём к владельцу и отдаём.
 	if total >= 4 {
@@ -589,9 +588,9 @@ func (s *Server) tickProjectiles(dt float32) {
 	// Применяем попадания в мобов.
 	if len(mobHits) > 0 {
 		type killDrop struct {
-			pos      protocol.Vector3
-			kind     string
-			mobInv   map[string]int
+			pos    protocol.Vector3
+			kind   string
+			mobInv map[string]int
 		}
 		var kills []killDrop
 

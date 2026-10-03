@@ -29,7 +29,6 @@ type Factory struct {
 	Progress int
 }
 
-
 const energyLinkRadiusD2 = 10.0 * 10.0
 const solarEnergyPerSec = 5
 const batteryMaxEnergy = 1000
@@ -99,10 +98,10 @@ func (s *Server) handlePlaceFactory(c *Client, p protocol.PlaceFactory) {
 // --- Factory recipes ---
 
 type factoryRecipe struct {
-	need    map[string]int
-	energy  int
-	out     string
-	outQty  int
+	need   map[string]int
+	energy int
+	out    string
+	outQty int
 }
 
 var factoryRecipes = map[string]factoryRecipe{
@@ -235,4 +234,3 @@ func (s *Server) tickEnergy(dt float32) {
 		}
 	}
 }
-

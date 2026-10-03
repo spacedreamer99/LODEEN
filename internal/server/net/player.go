@@ -29,7 +29,7 @@ type Client struct {
 	lastHitAt   time.Time
 	heldItem    string
 
-	closeOnce sync.Once
+	closeOnce    sync.Once
 	infiniteFuel bool
 }
 
