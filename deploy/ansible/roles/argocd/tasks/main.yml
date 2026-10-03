@@ -1,0 +1,41 @@
+---
+- name: Create argocd namespace
+  ansible.builtin.command: k3s kubectl create namespace argocd
+  register: ns_result
+  failed_when: "'already exists' not in ns_result.stderr and ns_result.rc != 0"
+  changed_when: ns_result.rc == 0
+
+- name: Install ArgoCD (server-side apply)
+  ansible.builtin.shell: |
+    k3s kubectl apply --server-side --force-conflicts -n argocd \
+      -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+  args:
+    creates: /tmp/.argocd-installed
+  register: argocd_install
+
+- name: Mark ArgoCD as installed
+  ansible.builtin.file:
+    path: /tmp/.argocd-installed
+    state: touch
+    mode: "0644"
+
+- name: Wait for argocd-server deployment
+  ansible.builtin.command: >
+    k3s kubectl -n argocd rollout status deployment/argocd-server --timeout=180s
+  changed_when: false
+
+- name: Apply LODEEN Application from git
+  ansible.builtin.shell: |
+    k3s kubectl apply -f https://raw.githubusercontent.com/spacedreamer99/LODEEN/main/deploy/argocd/application.yaml
+  register: app_result
+  changed_when: "'created' in app_result.stdout or 'configured' in app_result.stdout"
+
+- name: Print ArgoCD admin password retrieval command
+  ansible.builtin.debug:
+    msg: |
+      ArgoCD установлен. Чтобы получить пароль admin:
+        ssh root@{{ inventory_hostname }} \
+          "k3s kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo"
+      UI доступен через port-forward:
+        ssh -L 8081:localhost:8081 root@{{ inventory_hostname }} \
+          "k3s kubectl -n argocd port-forward svc/argocd-server 8081:443"
