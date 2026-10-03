@@ -1,103 +1,81 @@
 package net
 
 import (
-	"math"
-	mrand "math/rand"
-
 	"github.com/spacedreamer99/lodeen/internal/shared/protocol"
 )
 
+// hitMobResult — итог нанесения урона мобу.
+type hitMobResult struct {
+	killed  bool
+	hpAfter int
+	kind    string
+	drop    killDrop // валиден только если killed
+}
+
+// handleHitMob — оркестратор удара по мобу:
+// валидация+урон → дроп (если убит) → inventory update.
 func (s *Server) handleHitMob(c *Client, mobID string) {
-	s.mobs.Lock()
-	m, ok := s.mobs.Map()[mobID]
+	ps := c.State()
+	res, ok := s.applyHitMob(c, mobID, ps)
 	if !ok {
-		s.mobs.Unlock()
-		c.log.Warn("hit mob: not found")
 		return
 	}
-	// Валидация: игрок рядом.
-	ps := c.State()
+
+	if res.killed {
+		s.spawnDrops([]killDrop{res.drop})
+		c.log.Info("mob killed", "id", mobID, "kind", res.kind)
+	} else {
+		c.log.Info("mob hit", "id", mobID, "hp", res.hpAfter, "kind", res.kind)
+	}
+
+	s.sendInventory(c)
+}
+
+// applyHitMob под одним lock'ом: находит моба, валидирует дистанцию,
+// списывает spear, наносит урон, помечает collector как Angered,
+// удаляет убитого. Возвращает ok=false, если удар не состоялся.
+func (s *Server) applyHitMob(c *Client, mobID string, ps protocol.PlayerState) (hitMobResult, bool) {
+	s.mobs.Lock()
+	defer s.mobs.Unlock()
+
+	m, ok := s.mobs.Map()[mobID]
+	if !ok {
+		c.log.Warn("hit mob: not found")
+		return hitMobResult{}, false
+	}
 	dx := float64(m.Pos.X - ps.X)
 	dy := float64(m.Pos.Y - ps.Y)
 	dz := float64(m.Pos.Z - ps.Z)
 	if dx*dx+dy*dy+dz*dz > 100.0*100.0 {
-		s.mobs.Unlock()
 		c.log.Warn("hit mob: too far")
-		return
+		return hitMobResult{}, false
 	}
 	if !c.consumeItem("spear") {
-		s.mobs.Unlock()
-		return
+		return hitMobResult{}, false
 	}
 	m.HP--
 	if m.Kind == "collector" {
 		m.Angered = true
 	}
-	killed := m.HP <= 0
-	pos := m.Pos
-	kind := m.Kind
-	mobInv := m.Inventory
-	if killed {
+
+	res := hitMobResult{
+		hpAfter: m.HP,
+		kind:    m.Kind,
+		killed:  m.HP <= 0,
+	}
+	if res.killed {
+		res.drop = killDrop{
+			pos:    m.Pos,
+			kind:   m.Kind,
+			mobInv: m.Inventory,
+		}
 		delete(s.mobs.Map(), mobID)
 	}
-	s.mobs.Unlock()
+	return res, true
+}
 
-	if killed {
-		s.resources.Lock()
-		if kind == "pink" {
-			// Розовый — без дропа.
-		} else if kind == "collector" {
-			// Выпадают все собранные ресурсы компактной кучей.
-			for itemType, qty := range mobInv {
-				for i := 0; i < qty; i++ {
-					rid := newID()
-					theta := mrand.Float32() * 2 * math.Pi
-					rr := mrand.Float32() * 2.5
-					dx := float32(math.Cos(float64(theta))) * rr
-					dz := float32(math.Sin(float64(theta))) * rr
-					pp := protocol.ClampToSurface(protocol.Vector3{
-						X: pos.X + dx,
-						Y: pos.Y,
-						Z: pos.Z + dz,
-					})
-					s.resources.Map()[rid] = protocol.Resource{
-						ID:   rid,
-						Type: itemType,
-						X:    pp.X,
-						Y:    pp.Y,
-						Z:    pp.Z,
-					}
-				}
-			}
-		} else {
-			// Красный моб — 10 копий.
-			for i := 0; i < 10; i++ {
-				rid := newID()
-				theta := mrand.Float32() * 2 * math.Pi
-				r := mrand.Float32() * 2.0
-				dx := float32(math.Cos(float64(theta))) * r
-				dz := float32(math.Sin(float64(theta))) * r
-				pp := protocol.ClampToSurface(protocol.Vector3{
-					X: pos.X + dx,
-					Y: pos.Y,
-					Z: pos.Z + dz,
-				})
-				s.resources.Map()[rid] = protocol.Resource{
-					ID:   rid,
-					Type: "spear",
-					X:    pp.X,
-					Y:    pp.Y,
-					Z:    pp.Z,
-				}
-			}
-		}
-		s.resources.Unlock()
-		c.log.Info("mob killed", "id", mobID, "kind", kind)
-	} else {
-		c.log.Info("mob hit", "id", mobID, "hp", m.HP, "kind", kind)
-	}
-
-	// Inventory update
+// sendInventory отправляет клиенту актуальный InventoryUpdate.
+func (s *Server) sendInventory(c *Client) {
 	c.mu.Lock()
 	inv := make(map[string]int, len(c.inventory))
 	for k, v := range c.inventory {
