@@ -18,7 +18,6 @@ type Projectile struct {
 	SpawnAt    time.Time
 }
 
-
 func (s *Server) handleThrowSpear(c *Client, dir protocol.Vector3) {
 	// Валидация: есть ли копьё.
 	if !c.consumeItem("spear") {
@@ -49,4 +48,3 @@ func (s *Server) handleThrowSpear(c *Client, dir protocol.Vector3) {
 	c.mu.Unlock()
 	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
 }
-

@@ -29,7 +29,6 @@ type Mammoth struct {
 	BornAt        time.Time
 }
 
-
 const babyGrowTime = 60 * time.Second
 
 func (s *Server) spawnMammoths(n int) {
@@ -58,7 +57,6 @@ func (s *Server) spawnMammoths(n int) {
 	}
 	s.log.Info("spawned mammoths", "count", n)
 }
-
 
 func (s *Server) handleTameMammoth(c *Client, mammothID string) {
 	ps := c.State()
@@ -109,7 +107,6 @@ func (s *Server) handleTameMammoth(c *Client, mammothID string) {
 	c.mu.Unlock()
 	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
 }
-
 
 func (s *Server) tickBreeding() {
 	const closeD2 = 5.0 * 5.0
@@ -177,7 +174,6 @@ func (s *Server) tickBreeding() {
 	}
 }
 
-
 func (s *Server) handleLeashMammoth(c *Client, mammothID string) {
 	ps := c.State()
 
@@ -213,7 +209,6 @@ func (s *Server) handleLeashMammoth(c *Client, mammothID string) {
 
 	c.log.Info("mammoth leashed", "id", mammothID)
 }
-
 
 func (s *Server) handleSaddleMammoth(c *Client, mammothID string) {
 	ps := c.State()
@@ -274,7 +269,6 @@ func (s *Server) handleSaddleMammoth(c *Client, mammothID string) {
 	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
 }
 
-
 func (s *Server) handleRideMammoth(c *Client, mammothID string) {
 	ps := c.State()
 
@@ -314,7 +308,6 @@ func (s *Server) handleRideMammoth(c *Client, mammothID string) {
 	s.mammothsMu.Unlock()
 	c.log.Info("mounted", "id", mammothID)
 }
-
 
 func (s *Server) tickMammoths(dt float32) {
 	const fleeRadius = 30.0
@@ -466,7 +459,6 @@ func (s *Server) tickMammoths(dt float32) {
 	}
 }
 
-
 func (s *Server) handleHitMammoth(c *Client, mammothID string) {
 	now := time.Now()
 
@@ -539,4 +531,3 @@ func (s *Server) handleHitMammoth(c *Client, mammothID string) {
 		c.log.Info("mammoth hit", "id", mammothID, "hp", m.HP)
 	}
 }
-

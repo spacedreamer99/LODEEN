@@ -15,7 +15,6 @@ type Boat struct {
 	RiderID string
 }
 
-
 func (s *Server) handlePlaceBoat(c *Client, p protocol.PlaceBoat) {
 	// Проверка: точка на воде.
 	dir := protocol.Vector3{X: p.X, Y: p.Y, Z: p.Z}
@@ -55,7 +54,6 @@ func (s *Server) handlePlaceBoat(c *Client, p protocol.PlaceBoat) {
 	c.mu.Unlock()
 	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
 }
-
 
 func (s *Server) handleEnterBoat(c *Client, boatID string) {
 	ps := c.State()
@@ -105,7 +103,6 @@ func (s *Server) handleEnterBoat(c *Client, boatID string) {
 	c.log.Info("boat entered", "id", boatID)
 }
 
-
 func (s *Server) tickBoats() {
 	s.boatsMu.Lock()
 	defer s.boatsMu.Unlock()
@@ -141,5 +138,3 @@ func (s *Server) tickBoats() {
 		}
 	}
 }
-
-
