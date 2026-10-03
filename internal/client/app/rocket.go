@@ -43,26 +43,26 @@ func (a *App) updatePilotedRocket(dt float32) bool {
 	a.flight.HelioInit = true
 
 	// Сохранить данные для HUD.
-	a.hudRocket = *found
+	a.rocket.hudRocket = *found
 
 	// Инициализация носа ракеты при первом кадре.
 	// Считаем нормаль от центра планеты — не доверяем found.DX/DY/DZ.
-	if !a.rocketNoseInit {
+	if !a.rocket.noseInit {
 		rLen := float32(math.Sqrt(float64(found.X*found.X + found.Y*found.Y + found.Z*found.Z)))
 		if rLen > 0.01 {
-			a.rocketNoseX = found.X / rLen
-			a.rocketNoseY = found.Y / rLen
-			a.rocketNoseZ = found.Z / rLen
+			a.rocket.noseX = found.X / rLen
+			a.rocket.noseY = found.Y / rLen
+			a.rocket.noseZ = found.Z / rLen
 		} else {
-			a.rocketNoseX = 0
-			a.rocketNoseY = 1
-			a.rocketNoseZ = 0
+			a.rocket.noseX = 0
+			a.rocket.noseY = 1
+			a.rocket.noseZ = 0
 		}
-		a.rocketNoseInit = true
+		a.rocket.noseInit = true
 		a.log.Info("rocket nose initialized",
-			"x", a.rocketNoseX,
-			"y", a.rocketNoseY,
-			"z", a.rocketNoseZ)
+			"x", a.rocket.noseX,
+			"y", a.rocket.noseY,
+			"z", a.rocket.noseZ)
 	}
 
 	// Тяга по Space.
@@ -84,7 +84,7 @@ func (a *App) updatePilotedRocket(dt float32) bool {
 		const noseRate = 1.8
 		angleStep := noseRate * dt
 
-		nose := rl.NewVector3(a.rocketNoseX, a.rocketNoseY, a.rocketNoseZ)
+		nose := rl.NewVector3(a.rocket.noseX, a.rocket.noseY, a.rocket.noseZ)
 		rotated := false
 		if rl.IsKeyDown(rl.KeyW) {
 			nose = rotateAroundAxis(nose, rightLocal, -angleStep)
@@ -104,53 +104,53 @@ func (a *App) updatePilotedRocket(dt float32) bool {
 		}
 		if rotated {
 			nose = rl.Vector3Normalize(nose)
-			a.rocketNoseX = nose.X
-			a.rocketNoseY = nose.Y
-			a.rocketNoseZ = nose.Z
+			a.rocket.noseX = nose.X
+			a.rocket.noseY = nose.Y
+			a.rocket.noseZ = nose.Z
 			a.log.Info("rocket nose rotated",
 				"x", nose.X, "y", nose.Y, "z", nose.Z)
 		}
 	}
 
 	// Отправляем желаемое направление носа ракеты.
-	_ = a.nc.RocketInput(thrust, a.rocketNoseX, a.rocketNoseY, a.rocketNoseZ, a.autoPilot)
+	_ = a.nc.RocketInput(thrust, a.rocket.noseX, a.rocket.noseY, a.rocket.noseZ, a.rocket.autoPilot)
 
 	// Автопилот: G prograde, H retrograde, J radial-out, K radial-in,
 	// N normal, B antinormal, X off.
 	if rl.IsKeyPressed(rl.KeyG) {
-		a.autoPilot = "prograde"
+		a.rocket.autoPilot = "prograde"
 	}
 	if rl.IsKeyPressed(rl.KeyH) {
-		a.autoPilot = "retrograde"
+		a.rocket.autoPilot = "retrograde"
 	}
 	if rl.IsKeyPressed(rl.KeyJ) {
-		a.autoPilot = "radial_out"
+		a.rocket.autoPilot = "radial_out"
 	}
 	if rl.IsKeyPressed(rl.KeyK) {
-		a.autoPilot = "radial_in"
+		a.rocket.autoPilot = "radial_in"
 	}
 	if rl.IsKeyPressed(rl.KeyN) {
-		a.autoPilot = "normal"
+		a.rocket.autoPilot = "normal"
 	}
 	if rl.IsKeyPressed(rl.KeyB) {
-		a.autoPilot = "antinormal"
+		a.rocket.autoPilot = "antinormal"
 	}
 	if rl.IsKeyPressed(rl.KeyX) {
-		a.autoPilot = ""
+		a.rocket.autoPilot = ""
 	}
 
 	// E — выйти.
 	if rl.IsKeyPressed(rl.KeyE) {
 		_ = a.nc.ExitRocket()
 		a.player.rocketID = ""
-		a.showOrbitMap = false
-		a.rocketNoseInit = false
+		a.orbit.showOrbitMap = false
+		a.rocket.noseInit = false
 		a.log.Info("exit rocket sent")
 		return false
 	}
 
 	// Если карта открыта — ракета НЕ крутится мышью.
-	if a.showOrbitMap {
+	if a.orbit.showOrbitMap {
 		a.updateOrbitMapInput()
 	} else {
 		mdRocket := rl.GetMouseDelta()
