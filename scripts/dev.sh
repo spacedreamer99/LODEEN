@@ -23,7 +23,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "==> starting server"
-"$BIN/lodeen-server" >"$LOG/server.log" 2>&1 &
+LODEEN_SERVER_ADMIN_ADDR=:19092 "$BIN/lodeen-server" >"$LOG/server.log" 2>&1 &
 SERVER_PID=$!
 
 for i in $(seq 1 50); do

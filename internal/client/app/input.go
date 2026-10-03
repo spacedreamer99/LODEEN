@@ -66,7 +66,12 @@ func readMouseString() string {
 
 func (a *App) wellInSight() string {
 	wells := a.nc.Wells()
-	cam := a.camera.Position
+	ep := a.nc.EarthPos()
+	cam := rl.NewVector3(
+		a.camera.Position.X-ep.X,
+		a.camera.Position.Y-ep.Y,
+		a.camera.Position.Z-ep.Z,
+	)
 	fw := a.flight.Forward()
 	var bestID string
 	bestD2 := float32(36.0) // 6^2
@@ -153,7 +158,12 @@ func (a *App) factoryInSight() string {
 
 func (a *App) pinkMobInSight() (string, rl.Vector3) {
 	mobs := a.nc.Mobs()
-	cam := a.camera.Position
+	ep := a.nc.EarthPos()
+	cam := rl.NewVector3(
+		a.camera.Position.X-ep.X,
+		a.camera.Position.Y-ep.Y,
+		a.camera.Position.Z-ep.Z,
+	)
 	fw := a.flight.Forward()
 	var bestID string
 	var bestPos rl.Vector3
@@ -288,7 +298,12 @@ func (a *App) mammothInReach() string {
 
 func (a *App) seedInSight() string {
 	res := a.nc.Resources()
-	cam := a.camera.Position
+	ep := a.nc.EarthPos()
+	cam := rl.NewVector3(
+		a.camera.Position.X-ep.X,
+		a.camera.Position.Y-ep.Y,
+		a.camera.Position.Z-ep.Z,
+	)
 	fw := a.flight.Forward()
 	var bestID string
 	bestD2 := float32(25.0) // 5^2

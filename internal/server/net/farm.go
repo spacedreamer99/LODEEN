@@ -14,7 +14,6 @@ import (
 
 var resourceTypes = []string{"stone", "wood", "ore", "fruit", "fruit", "fruit", "fruit", "fruit", "water", "liana"}
 
-
 func (s *Server) spawnResources(n int) {
 	for i := 0; i < n; i++ {
 		// Случайная точка на сфере (равномерно)
@@ -41,11 +40,9 @@ func (s *Server) spawnResources(n int) {
 	s.log.Info("spawned resources on surface", "count", n)
 }
 
-
 const plantRadius = 5.0
 
 const growDelay = 30 * time.Second
-
 
 func (s *Server) handlePlantSeed(c *Client, p protocol.PlantSeed) {
 	ps := c.State()
@@ -59,14 +56,16 @@ func (s *Server) handlePlantSeed(c *Client, p protocol.PlantSeed) {
 	if !c.consumeItem("fruit") {
 		return
 	}
+	// Прижимаем seed к поверхности — иначе висит в воздухе на высоте камеры.
+	pos := protocol.ClampToSurface(protocol.Vector3{X: p.X, Y: p.Y, Z: p.Z})
 	id := newID()
 	s.resourcesMu.Lock()
 	s.resources[id] = protocol.Resource{
 		ID:   id,
 		Type: "seed",
-		X:    p.X,
-		Y:    p.Y,
-		Z:    p.Z,
+		X:    pos.X,
+		Y:    pos.Y,
+		Z:    pos.Z,
 	}
 	s.resourcesMu.Unlock()
 
@@ -79,7 +78,6 @@ func (s *Server) handlePlantSeed(c *Client, p protocol.PlantSeed) {
 	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
 	c.log.Info("seed planted", "id", id)
 }
-
 
 func (s *Server) handleWaterPlant(c *Client, resourceID string) {
 	ps := c.State()
@@ -122,7 +120,6 @@ func (s *Server) handleWaterPlant(c *Client, resourceID string) {
 	c.log.Info("seed watered", "id", resourceID)
 }
 
-
 func (s *Server) tickResources() {
 	now := time.Now().UnixMilli()
 	s.resourcesMu.Lock()
@@ -132,7 +129,8 @@ func (s *Server) tickResources() {
 			continue
 		}
 		delete(s.resources, id)
-		for i := 0; i < 10; i++ {
+		const harvestFruits = 2
+		for i := 0; i < harvestFruits; i++ {
 			fid := newID()
 			s.resources[fid] = protocol.Resource{
 				ID:   fid,
@@ -142,7 +140,6 @@ func (s *Server) tickResources() {
 				Z:    r.Z,
 			}
 		}
-		s.log.Info("seed grew", "id", id, "fruits", 2)
+		s.log.Info("seed grew", "id", id, "fruits", harvestFruits)
 	}
 }
-

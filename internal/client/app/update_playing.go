@@ -24,6 +24,69 @@ func (a *App) updatePlaying(dt float32) {
 		a.rocketID = ""
 	}
 
+	// Обновляем EarthPos/Vel/SunPos у flight ДО любых early-return.
+	if a.flight != nil {
+		a.flight.EarthPos = rl.NewVector3(a.earthPos.X, a.earthPos.Y, a.earthPos.Z)
+		a.flight.SunPos = rl.NewVector3(protocol.SunPos.X, protocol.SunPos.Y, protocol.SunPos.Z)
+		a.flight.EarthVel = rl.NewVector3(a.earthVel.X, a.earthVel.Y, a.earthVel.Z)
+
+		// Компенсация движения Земли для AttachedBody == "earth" в Creative,
+		// и синк Pos = EarthPos + RelPos для Survival. Вызывается КАЖДЫЙ кадр.
+		a.flight.SyncToEarthFrame(dt)
+	}
+
+	// Если открыт любой UI — жёстко прибиваем игрока к Земле через rel-координаты.
+	// Так же как pause: Pos = earthPos + relPos, каждый кадр.
+	anyUI := a.showInventory || a.showCraft || a.showContract || a.showFactory || a.chat.Open
+	if a.flight != nil && anyUI {
+		if !a.flightLocked {
+			a.flightLockedRelPos = protocol.Vector3{
+				X: a.flight.Pos.X - a.earthPos.X,
+				Y: a.flight.Pos.Y - a.earthPos.Y,
+				Z: a.flight.Pos.Z - a.earthPos.Z,
+			}
+			a.flightLockedRelVel = protocol.Vector3{
+				X: a.flight.Vel.X - a.earthVel.X,
+				Y: a.flight.Vel.Y - a.earthVel.Y,
+				Z: a.flight.Vel.Z - a.earthVel.Z,
+			}
+			a.flightLocked = true
+			// Синхронизируем RelPos в FlightController — чтобы при release не было скачка.
+			a.flight.RelPos = rl.NewVector3(
+				a.flightLockedRelPos.X, a.flightLockedRelPos.Y, a.flightLockedRelPos.Z)
+			a.flight.RelVel = rl.NewVector3(
+				a.flightLockedRelVel.X, a.flightLockedRelVel.Y, a.flightLockedRelVel.Z)
+			a.flight.RelInit = true
+		}
+		a.flight.Pos = rl.NewVector3(
+			a.earthPos.X+a.flightLockedRelPos.X,
+			a.earthPos.Y+a.flightLockedRelPos.Y,
+			a.earthPos.Z+a.flightLockedRelPos.Z,
+		)
+		a.flight.Vel = rl.NewVector3(
+			a.earthVel.X+a.flightLockedRelVel.X,
+			a.earthVel.Y+a.flightLockedRelVel.Y,
+			a.earthVel.Z+a.flightLockedRelVel.Z,
+		)
+		// RelPos тоже держим синхронно с текущей Землёй — иначе release сделает скачок.
+		a.flight.RelPos = rl.NewVector3(
+			a.flightLockedRelPos.X, a.flightLockedRelPos.Y, a.flightLockedRelPos.Z)
+		a.flight.RelVel = rl.NewVector3(
+			a.flightLockedRelVel.X, a.flightLockedRelVel.Y, a.flightLockedRelVel.Z)
+
+		// Ключевое: держим camSmoothPos/Target/Init синхронно с flight.Pos,
+		// без lerp. Иначе при закрытии UI камера lerp-догоняет и дёргается.
+		fw := a.flight.Forward()
+		a.camSmoothPos = a.flight.Pos
+		a.camSmoothTarget = rl.Vector3Add(a.flight.Pos, rl.Vector3Scale(fw, 100.0))
+		a.camSmoothInit = true
+		a.camera.Position = a.camSmoothPos
+		a.camera.Target = a.camSmoothTarget
+		a.camera.Up = a.flight.CameraUp()
+	} else {
+		a.flightLocked = false
+	}
+
 	// Диалоги блокируют всё остальное.
 	if a.showContract {
 		a.updateContract()
@@ -70,9 +133,9 @@ func (a *App) updatePlaying(dt float32) {
 
 	if rl.IsKeyPressed(rl.KeyF1) && a.flight != nil {
 		if a.flight.Mode == input.ModeCreative {
-			a.flight.Mode = input.ModeSurvival
+			a.flight.SwitchMode(input.ModeSurvival)
 		} else {
-			a.flight.Mode = input.ModeCreative
+			a.flight.SwitchMode(input.ModeCreative)
 		}
 		a.log.Info("mode changed", "mode", a.flight.Mode)
 	}
@@ -181,8 +244,13 @@ func (a *App) updatePlaying(dt float32) {
 			if err := a.nc.ThrowSpear(dir); err != nil {
 				a.log.Warn("throw spear", "err", err)
 			}
+			ep := a.nc.EarthPos()
 			a.projectiles = append(a.projectiles, projectile{
-				pos:   a.camera.Position,
+				pos: rl.NewVector3(
+					a.camera.Position.X-ep.X,
+					a.camera.Position.Y-ep.Y,
+					a.camera.Position.Z-ep.Z,
+				),
 				dir:   fw,
 				spawn: time.Now(),
 			})
@@ -196,12 +264,16 @@ func (a *App) updatePlaying(dt float32) {
 				a.log.Info("tame mammoth sent (LMB)", "id", id)
 			} else {
 				// Иначе — посадить семечко в 2 юнитах перед собой.
+				// Координаты в geo (сервер ждёт geo, а не helio).
 				fw := a.flight.Forward()
-				pos := rl.Vector3Add(a.camera.Position, rl.Vector3Scale(fw, 2.0))
+				helio := rl.Vector3Add(a.camera.Position, rl.Vector3Scale(fw, 2.0))
+				ep := a.nc.EarthPos()
+				pos := rl.NewVector3(helio.X-ep.X, helio.Y-ep.Y, helio.Z-ep.Z)
 				if err := a.nc.PlantSeed(pos.X, pos.Y, pos.Z); err != nil {
 					a.log.Warn("plant seed", "err", err)
 				}
-				a.log.Info("plant seed sent (LMB)")
+				a.log.Info("plant seed sent (LMB)",
+					"geo", fmt.Sprintf("%.1f,%.1f,%.1f", pos.X, pos.Y, pos.Z))
 			}
 		case "water":
 			// Полить росток, на который смотрит игрок.

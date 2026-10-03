@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"math"
 	"time"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
@@ -157,32 +156,31 @@ func (a *App) update(dt float32) {
 
 	// На паузе игрок жёстко привязан к Земле по relative-координатам.
 	if a.mode == state.ModePaused && a.flight != nil && a.flight.HelioInit {
-		a.flight.Pos = rl.NewVector3(
-			a.earthPos.X+a.pausedRelPos.X,
-			a.earthPos.Y+a.pausedRelPos.Y,
-			a.earthPos.Z+a.pausedRelPos.Z,
-		)
-		a.flight.Vel = rl.NewVector3(
-			a.earthVel.X+a.pausedRelVel.X,
-			a.earthVel.Y+a.pausedRelVel.Y,
-			a.earthVel.Z+a.pausedRelVel.Z,
-		)
-		// Камера тоже едет с Землёй — иначе при выходе из паузы скачок.
+		// Обновляем Earth — чтобы flight знал текущую Землю.
+		a.flight.EarthPos = rl.NewVector3(a.earthPos.X, a.earthPos.Y, a.earthPos.Z)
+		a.flight.EarthVel = rl.NewVector3(a.earthVel.X, a.earthVel.Y, a.earthVel.Z)
+
+		// Применяем физику (гравитация + коллизия) — персонаж падает на грунт,
+		// не висит в воздухе на паузе.
+		a.flight.TickPhysicsOnly(rl.GetFrameTime())
+
+		// Синхронизируем pausedRel* из flight — release использует их.
+		a.pausedRelPos = protocol.Vector3{
+			X: a.flight.RelPos.X,
+			Y: a.flight.RelPos.Y,
+			Z: a.flight.RelPos.Z,
+		}
+		a.pausedRelVel = protocol.Vector3{
+			X: a.flight.RelVel.X,
+			Y: a.flight.RelVel.Y,
+			Z: a.flight.RelVel.Z,
+		}
+
+		// Камера едет с Землёй.
 		fw := a.flight.Forward()
 		a.camera.Position = a.flight.Pos
 		a.camera.Target = rl.Vector3Add(a.flight.Pos, rl.Vector3Scale(fw, 100.0))
 		a.camera.Up = a.flight.CameraUp()
-
-		// Раз в секунду — что реально применяем.
-		if time.Since(a.lastLogAt) > time.Second {
-			a.log.Info("PAUSE TICK",
-				"flightPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.flight.Pos.X, a.flight.Pos.Y, a.flight.Pos.Z),
-				"earth", fmt.Sprintf("%.2f,%.2f,%.2f", a.earthPos.X, a.earthPos.Y, a.earthPos.Z),
-				"relDist", fmt.Sprintf("%.3f", math.Sqrt(float64(
-					(a.flight.Pos.X-a.earthPos.X)*(a.flight.Pos.X-a.earthPos.X)+
-						(a.flight.Pos.Y-a.earthPos.Y)*(a.flight.Pos.Y-a.earthPos.Y)+
-						(a.flight.Pos.Z-a.earthPos.Z)*(a.flight.Pos.Z-a.earthPos.Z)))))
-		}
 	}
 
 	switch a.mode {
