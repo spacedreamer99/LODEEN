@@ -31,7 +31,7 @@ func (a *App) startConnect() {
 		a.log.Warn("connect failed", "err", err)
 		return
 	}
-	a.hp = 100
+	a.player.hp = 100
 	a.log.Info("connected", "took", time.Since(start).String())
 
 	spawn := render.SpawnFromID(welcome.PlayerID)

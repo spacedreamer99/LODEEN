@@ -14,7 +14,7 @@ func (a *App) updatePilotedRocket(dt float32) bool {
 
 	var found *protocol.Rocket
 	for i := range rs {
-		if rs[i].ID == a.rocketID {
+		if rs[i].ID == a.player.rocketID {
 			found = &rs[i]
 			break
 		}
@@ -22,14 +22,14 @@ func (a *App) updatePilotedRocket(dt float32) bool {
 
 	// Grace period: первые 3 секунды после board снапшот может ещё не прийти.
 	// Не сбрасываем rocketID, просто ждём.
-	graceful := time.Since(a.rocketBoardedAt) < 3*time.Second
+	graceful := time.Since(a.player.rocketBoardedAt) < 3*time.Second
 
 	if found == nil {
 		if graceful {
 			// ещё ждём подтверждения от сервера
 			return true
 		}
-		a.log.Info("rocket lost, leaving", "id", a.rocketID)
+		a.log.Info("rocket lost, leaving", "id", a.player.rocketID)
 		return false
 	}
 
@@ -142,7 +142,7 @@ func (a *App) updatePilotedRocket(dt float32) bool {
 	// E — выйти.
 	if rl.IsKeyPressed(rl.KeyE) {
 		_ = a.nc.ExitRocket()
-		a.rocketID = ""
+		a.player.rocketID = ""
 		a.showOrbitMap = false
 		a.rocketNoseInit = false
 		a.log.Info("exit rocket sent")
@@ -164,7 +164,7 @@ func (a *App) updatePilotedRocket(dt float32) bool {
 	a.camera.camera.Up = a.flight.CameraUp()
 
 	a.log.Info("rocket pilot tick",
-		"id", a.rocketID,
+		"id", a.player.rocketID,
 		"x", found.X, "y", found.Y, "z", found.Z,
 		"fuel", found.Fuel,
 		"thrust", thrust)

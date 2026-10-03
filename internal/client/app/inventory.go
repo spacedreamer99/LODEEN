@@ -334,7 +334,7 @@ func (a *App) drawHeldItem() {
 }
 
 func (a *App) myHP() int {
-	return a.hp
+	return a.player.hp
 }
 
 func (a *App) heldItem() string {

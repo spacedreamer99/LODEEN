@@ -8,7 +8,7 @@ import (
 )
 
 func (a *App) updateProjectiles() {
-	if len(a.projectiles) == 0 {
+	if len(a.player.projectiles) == 0 {
 		return
 	}
 	now := time.Now()
@@ -22,8 +22,8 @@ func (a *App) updateProjectiles() {
 	mobs := a.nc.Mobs()
 	mammoths := a.nc.Mammoths()
 
-	alive := a.projectiles[:0]
-	for _, p := range a.projectiles {
+	alive := a.player.projectiles[:0]
+	for _, p := range a.player.projectiles {
 		if now.Sub(p.spawn).Seconds() > ttl {
 			continue
 		}
@@ -61,7 +61,7 @@ func (a *App) updateProjectiles() {
 		}
 		alive = append(alive, p)
 	}
-	a.projectiles = alive
+	a.player.projectiles = alive
 }
 
 func segSphereHit(a, b, c rl.Vector3, r float32) bool {
@@ -87,7 +87,7 @@ func (a *App) drawProjectiles() {
 	shaftCol := rl.NewColor(140, 100, 60, 255)
 	tipCol := rl.NewColor(220, 220, 200, 255)
 
-	for _, p := range a.projectiles {
+	for _, p := range a.player.projectiles {
 		dir := rl.Vector3Normalize(p.dir)
 		yaw := float32(math.Atan2(float64(dir.X), float64(dir.Z))) * 180 / math.Pi
 		pitch := -float32(math.Asin(float64(dir.Y))) * 180 / math.Pi

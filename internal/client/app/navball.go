@@ -153,11 +153,11 @@ func (a *App) drawNavBall() {
 }
 
 func (a *App) drawRocketHUD() {
-	if a.rocketID == "" {
+	if a.player.rocketID == "" {
 		return
 	}
 	r := a.hudRocket
-	if r.ID != a.rocketID {
+	if r.ID != a.player.rocketID {
 		return
 	}
 
