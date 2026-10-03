@@ -1,0 +1,17 @@
+LODEEN {{ .Chart.AppVersion }} deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+World server (stateful, one replica):
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+
+Port-forward to play locally:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "lodeen.fullname" . }} {{ .Values.service.gamePort }}:{{ .Values.service.gamePort }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "lodeen.fullname" . }} {{ .Values.service.adminPort }}:{{ .Values.service.adminPort }}
+
+Admin endpoints:
+  http://localhost:{{ .Values.service.adminPort }}/healthz
+  http://localhost:{{ .Values.service.adminPort }}/metrics
+  http://localhost:{{ .Values.service.adminPort }}/version
+
+{{- if .Values.serviceMonitor.enabled }}
+Prometheus ServiceMonitor enabled (release={{ .Values.serviceMonitor.releaseLabel }}).
+{{- end }}

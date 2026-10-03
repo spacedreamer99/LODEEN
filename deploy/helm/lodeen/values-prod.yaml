@@ -1,0 +1,36 @@
+# Prod overrides: GHCR image, hardened, NetworkPolicy on.
+replicaCount: 1
+
+image:
+  repository: ghcr.io/spacedreamer99/lodeen-server
+  tag: main
+  pullPolicy: IfNotPresent
+
+env:
+  LODEEN_ENV: "prod"
+  LODEEN_LOG_LEVEL: "info"
+  LODEEN_SERVER_TCP_ADDR: ":7777"
+  LODEEN_SERVER_ADMIN_ADDR: ":9091"
+  LODEEN_SERVER_TICK_RATE: "20"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 64Mi
+  limits:
+    cpu: 1000m
+    memory: 256Mi
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+serviceMonitor:
+  enabled: true
+  releaseLabel: kps
+
+networkPolicy:
+  enabled: true
+  gamePortFromAnywhere: true
+  adminPortFromNamespaces:
+    - monitoring

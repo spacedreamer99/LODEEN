@@ -1,0 +1,31 @@
+{{- if .Values.networkPolicy.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "lodeen.fullname" . }}
+  labels:
+    {{- include "lodeen.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "lodeen.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- if .Values.networkPolicy.gamePortFromAnywhere }}
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.gamePort }}
+    {{- end }}
+    - from:
+        {{- range .Values.networkPolicy.adminPortFromNamespaces }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.adminPort }}
+{{- end }}
