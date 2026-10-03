@@ -42,6 +42,30 @@ Launcher сам решает: какой клиент скачать, какие
 - Своя команда модерации.
 - Свой домен, свой бренд.
 
+## Observability
+
+- Prometheus + Grafana + Alertmanager в k3d (kube-prometheus-stack через Helm)
+- ServiceMonitor → скрейпит `/metrics` каждого пода LODEEN каждые 15 с
+- Дашборд: `monitoring/grafana/dashboards/lodeen.json`
+
+### Метрики
+
+| Метрика | Тип | Что показывает |
+|---|---|---|
+| `lodeen_tick_duration_seconds` | histogram | Время тика (SLO: p99 < 5 мс) |
+| `lodeen_snapshot_bytes` | histogram | Размер снапшота в байтах |
+| `lodeen_rtt_seconds` | histogram | RTT клиента (репортит клиент) |
+| `lodeen_server_players_connected` | gauge | Игроков онлайн |
+| `lodeen_server_ticks_total` | counter | Всего тиков |
+
+### SLO
+
+- 99% тиков < 5 мс (проверено: p99 = 0.4 мс при 3 клиентах)
+- 99.9% uptime мира
+- RTT p95 < 100 мс при 32 игроках
+
+![Grafana dashboard](docs/img/dashboard.png)
+
 ## Стек
 
 | Слой | Технология |
@@ -127,7 +151,7 @@ Chain of Trust: каждый link — отдельный акт верифика
 - [x] k3d кластер + базовый деплой
 - [ ] Helm-чарт
 - [ ] ArgoCD (CD)
-- [ ] Prometheus + Grafana
+- [x] Prometheus + Grafana + дашборд
 - [ ] Terraform + Ansible (VPS)
 
 ## Лицензия
