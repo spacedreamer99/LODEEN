@@ -9,7 +9,7 @@ DATE        ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS     := -s -w -X $(MODULE)/internal/shared/version.Version=$(VERSION) -X $(MODULE)/internal/shared/version.Commit=$(COMMIT) -X $(MODULE)/internal/shared/version.Date=$(DATE)
 
 .PHONY: build
-build: build-server build-client
+build: build-server build-client build-loadtest
 
 .PHONY: build-server
 build-server:
@@ -19,6 +19,10 @@ build-server:
 build-client:
 	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/lodeen-client ./cmd/client
 
+.PHONY: build-loadtest
+build-loadtest:
+	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/lodeen-loadtest ./cmd/loadtest
+
 .PHONY: test
 test:
 	$(GO) test -race -cover ./...
@@ -26,6 +30,15 @@ test:
 .PHONY: dev
 dev:
 	-./scripts/dev.sh
+
+N        ?= 32
+ADDR     ?= 127.0.0.1:7777
+RATE     ?= 20
+DURATION ?= 60s
+
+.PHONY: loadtest
+loadtest: build-loadtest
+	$(BIN_DIR)/lodeen-loadtest -n $(N) -addr $(ADDR) -rate $(RATE) -duration $(DURATION)
 
 .PHONY: docker-build
 docker-build:

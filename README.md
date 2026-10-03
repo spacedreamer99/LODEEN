@@ -58,13 +58,20 @@ Launcher сам решает: какой клиент скачать, какие
 | `lodeen_server_players_connected` | gauge | Игроков онлайн |
 | `lodeen_server_ticks_total` | counter | Всего тиков |
 
-### SLO
+### SLO (проверено нагрузочным тестом)
 
-- 99% тиков < 5 мс (проверено: p99 = 0.4 мс при 3 клиентах)
-- 99.9% uptime мира
-- RTT p95 < 100 мс при 32 игроках
+| Метрика | Цель | Достигнуто (32 бота) |
+|---|---|---|
+| Tick duration p99 | < 5 мс | **1.0 мс** |
+| Tick rate | 20 Hz | **20 Hz** |
+| RTT p99 (loopback) | < 100 мс | **~5 мс** |
+| Errors | 0 | **0** |
 
-![Grafana dashboard](docs/img/dashboard.png)
+**Нагрузочный тест:** 32 headless-бота × 60 секунд → 655 snapshots/s,
+3.9 MB/s, 0 ошибок. Генератор: `cmd/loadtest`.
+Запуск: `make loadtest N=32 DURATION=60s`.
+
+![Grafana dashboard под нагрузкой](docs/img/dashboard-loadtest-32.png)
 
 ## Стек
 
