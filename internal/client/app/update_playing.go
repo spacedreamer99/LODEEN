@@ -660,19 +660,19 @@ func (a *App) updateFlightPhysics(dt float32) {
 }
 
 func (a *App) logFlightDiag(dt float32, md rl.Vector2) {
-	a.debugFrame++
+	a.diag.debugFrame++
 	keys := readKeysString()
 	mouse := readMouseString()
 
 	now := time.Now()
-	changed := keys != a.lastKeys || mouse != a.lastMouse || md.X != 0 || md.Y != 0
-	idle := now.Sub(a.lastLogAt) > time.Second
-	if !(changed || idle) || now.Sub(a.lastLogAt) < 30*time.Millisecond {
+	changed := keys != a.diag.lastKeys || mouse != a.diag.lastMouse || md.X != 0 || md.Y != 0
+	idle := now.Sub(a.diag.lastLogAt) > time.Second
+	if !(changed || idle) || now.Sub(a.diag.lastLogAt) < 30*time.Millisecond {
 		return
 	}
 
 	edgeKeys := ""
-	if keys != a.lastKeys {
+	if keys != a.diag.lastKeys {
 		edgeKeys = keys
 	}
 
@@ -698,10 +698,10 @@ func (a *App) logFlightDiag(dt float32, md rl.Vector2) {
 		"keys", keys,
 	)
 
-	a.lastLogAt = now
-	a.lastPos = a.flight.Pos
-	a.lastKeys = keys
-	a.lastMouse = mouse
+	a.diag.lastLogAt = now
+	a.diag.lastPos = a.flight.Pos
+	a.diag.lastKeys = keys
+	a.diag.lastMouse = mouse
 }
 
 func (a *App) updateCameraSmoothing() {

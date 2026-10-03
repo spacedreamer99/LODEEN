@@ -190,10 +190,10 @@ func (a *App) updatePlanet2() {
 
 func (a *App) handleDebugKeys() {
 	if rl.IsKeyPressed(rl.KeyF3) {
-		a.showDebug = !a.showDebug
+		a.diag.showDebug = !a.diag.showDebug
 	}
 	if rl.IsKeyPressed(rl.KeyF8) {
-		a.diagFrames = 120 // 2 секунды @ 60 FPS
+		a.diag.diagFrames = 120 // 2 секунды @ 60 FPS
 		a.log.Info("DIAG START")
 	}
 }
@@ -261,10 +261,10 @@ func (a *App) dispatchMode(dt float32) {
 // --- Диагностика (F8) ---
 
 func (a *App) updateDiag(dt float32) {
-	if a.diagFrames <= 0 || a.flight == nil {
+	if a.diag.diagFrames <= 0 || a.flight == nil {
 		return
 	}
-	a.diagFrames--
+	a.diag.diagFrames--
 
 	rel := rl.Vector3Subtract(a.flight.Pos, a.earthPosAsRl())
 	a.log.Info("DIAG",
@@ -277,7 +277,7 @@ func (a *App) updateDiag(dt float32) {
 		"vel", fmt.Sprintf("%.4f,%.4f,%.4f", a.flight.Vel.X, a.flight.Vel.Y, a.flight.Vel.Z),
 		"renderTick", fmt.Sprintf("%.4f", a.renderTick),
 		"dt", fmt.Sprintf("%.5f", dt))
-	if a.diagFrames == 0 {
+	if a.diag.diagFrames == 0 {
 		a.log.Info("DIAG END")
 	}
 }
