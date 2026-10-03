@@ -1,10 +1,11 @@
 # LODEEN
 
-📄 **[DevOps Portfolio](docs/PORTFOLIO.md)** | **Федеративная платформа для кооперативного мультиплеера на Go.**
+📄 **[DevOps Portfolio](docs/PORTFOLIO.md)** · **[Testing](docs/TESTING.md)** · **[Refactoring Log](docs/REFACTOR.md)** | **Федеративная платформа для кооперативного мультиплеера на Go.**
 
 PvE-фокус. Open Source (Apache 2.0). Chain of Trust. Opt-in discovery.
 
-![CI](https://github.com/spacedreamer99/LODEEN/actions/workflows/ci.yml/badge.svg)
+[![CI](https://github.com/spacedreamer99/LODEEN/actions/workflows/ci.yml/badge.svg)](https://github.com/spacedreamer99/LODEEN/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/spacedreamer99/LODEEN)](https://goreportcard.com/report/github.com/spacedreamer99/LODEEN)
 
 ## Концепция
 
