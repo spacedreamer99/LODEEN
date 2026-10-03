@@ -146,12 +146,12 @@ func (a *App) applyUILock(dt float32) {
 
 	// Камера едет с Землёй без lerp — иначе при закрытии UI дёргается.
 	fw := a.flight.Forward()
-	a.camSmoothPos = a.flight.Pos
-	a.camSmoothTarget = rl.Vector3Add(a.flight.Pos, rl.Vector3Scale(fw, 100.0))
-	a.camSmoothInit = true
-	a.camera.Position = a.camSmoothPos
-	a.camera.Target = a.camSmoothTarget
-	a.camera.Up = a.flight.CameraUp()
+	a.camera.camSmoothPos = a.flight.Pos
+	a.camera.camSmoothTarget = rl.Vector3Add(a.flight.Pos, rl.Vector3Scale(fw, 100.0))
+	a.camera.camSmoothInit = true
+	a.camera.camera.Position = a.camera.camSmoothPos
+	a.camera.camera.Target = a.camera.camSmoothTarget
+	a.camera.camera.Up = a.flight.CameraUp()
 }
 
 // --- Диалоги ---
@@ -392,7 +392,7 @@ func (a *App) handleHeldItemClick(held string) {
 		a.log.Info("place rocket sent (LMB)")
 	case "boat":
 		fw := a.flight.Forward()
-		pos := rl.Vector3Add(a.camera.Position, rl.Vector3Scale(fw, 5.0))
+		pos := rl.Vector3Add(a.camera.camera.Position, rl.Vector3Scale(fw, 5.0))
 		yaw := float32(math.Atan2(float64(fw.X), float64(fw.Z)))
 		if err := a.nc.PlaceBoat(pos.X, pos.Y, pos.Z, yaw); err != nil {
 			a.log.Warn("place boat", "err", err)
@@ -468,9 +468,9 @@ func (a *App) throwSpear() {
 	ep := a.nc.EarthPos()
 	a.projectiles = append(a.projectiles, projectile{
 		pos: rl.NewVector3(
-			a.camera.Position.X-ep.X,
-			a.camera.Position.Y-ep.Y,
-			a.camera.Position.Z-ep.Z,
+			a.camera.camera.Position.X-ep.X,
+			a.camera.camera.Position.Y-ep.Y,
+			a.camera.camera.Position.Z-ep.Z,
 		),
 		dir:   fw,
 		spawn: time.Now(),
@@ -489,7 +489,7 @@ func (a *App) useFruit() {
 	}
 	// Иначе — посадить семечко в 2 юнитах перед собой.
 	fw := a.flight.Forward()
-	helio := rl.Vector3Add(a.camera.Position, rl.Vector3Scale(fw, 2.0))
+	helio := rl.Vector3Add(a.camera.camera.Position, rl.Vector3Scale(fw, 2.0))
 	ep := a.nc.EarthPos()
 	pos := rl.NewVector3(helio.X-ep.X, helio.Y-ep.Y, helio.Z-ep.Z)
 	if err := a.nc.PlantSeed(pos.X, pos.Y, pos.Z); err != nil {
@@ -617,9 +617,9 @@ func (a *App) updateUnfocusFreeze() bool {
 		a.world.earthVel.Z+a.unfocusRelVel.Z,
 	)
 	fw := a.flight.Forward()
-	a.camera.Position = a.flight.Pos
-	a.camera.Target = rl.Vector3Add(a.flight.Pos, rl.Vector3Scale(fw, 100.0))
-	a.camera.Up = a.flight.CameraUp()
+	a.camera.camera.Position = a.flight.Pos
+	a.camera.camera.Target = rl.Vector3Add(a.flight.Pos, rl.Vector3Scale(fw, 100.0))
+	a.camera.camera.Up = a.flight.CameraUp()
 	return true
 }
 
@@ -708,20 +708,20 @@ func (a *App) updateCameraSmoothing() {
 	fw := a.flight.Forward()
 	targetNew := rl.Vector3Add(a.flight.Pos, rl.Vector3Scale(fw, 100.0))
 
-	if !a.camSmoothInit {
-		a.camSmoothPos = a.flight.Pos
-		a.camSmoothTarget = targetNew
-		a.camSmoothInit = true
+	if !a.camera.camSmoothInit {
+		a.camera.camSmoothPos = a.flight.Pos
+		a.camera.camSmoothTarget = targetNew
+		a.camera.camSmoothInit = true
 	} else {
 		const camAlpha = float32(0.5)
-		a.camSmoothPos = rl.Vector3Add(a.camSmoothPos,
-			rl.Vector3Scale(rl.Vector3Subtract(a.flight.Pos, a.camSmoothPos), camAlpha))
-		a.camSmoothTarget = rl.Vector3Add(a.camSmoothTarget,
-			rl.Vector3Scale(rl.Vector3Subtract(targetNew, a.camSmoothTarget), camAlpha))
+		a.camera.camSmoothPos = rl.Vector3Add(a.camera.camSmoothPos,
+			rl.Vector3Scale(rl.Vector3Subtract(a.flight.Pos, a.camera.camSmoothPos), camAlpha))
+		a.camera.camSmoothTarget = rl.Vector3Add(a.camera.camSmoothTarget,
+			rl.Vector3Scale(rl.Vector3Subtract(targetNew, a.camera.camSmoothTarget), camAlpha))
 	}
-	a.camera.Position = a.camSmoothPos
-	a.camera.Target = a.camSmoothTarget
-	a.camera.Up = a.flight.CameraUp()
+	a.camera.camera.Position = a.camera.camSmoothPos
+	a.camera.camera.Target = a.camera.camSmoothTarget
+	a.camera.camera.Up = a.flight.CameraUp()
 }
 
 // --- Отправка состояния на сервер ---

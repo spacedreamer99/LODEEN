@@ -68,9 +68,9 @@ func (a *App) wellInSight() string {
 	wells := a.nc.Wells()
 	ep := a.nc.EarthPos()
 	cam := rl.NewVector3(
-		a.camera.Position.X-ep.X,
-		a.camera.Position.Y-ep.Y,
-		a.camera.Position.Z-ep.Z,
+		a.camera.camera.Position.X-ep.X,
+		a.camera.camera.Position.Y-ep.Y,
+		a.camera.camera.Position.Z-ep.Z,
 	)
 	fw := a.flight.Forward()
 	var bestID string
@@ -100,7 +100,7 @@ func (a *App) wellInSight() string {
 
 func (a *App) rocketInSight() string {
 	rs := a.nc.Rockets()
-	cam := a.camera.Position
+	cam := a.camera.camera.Position
 	fw := a.flight.Forward()
 	var bestID string
 	bestD2 := float32(64.0)
@@ -129,7 +129,7 @@ func (a *App) rocketInSight() string {
 
 func (a *App) factoryInSight() string {
 	fs := a.nc.Factories()
-	cam := a.camera.Position
+	cam := a.camera.camera.Position
 	fw := a.flight.Forward()
 	var bestID string
 	bestD2 := float32(36.0)
@@ -160,9 +160,9 @@ func (a *App) pinkMobInSight() (string, rl.Vector3) {
 	mobs := a.nc.Mobs()
 	ep := a.nc.EarthPos()
 	cam := rl.NewVector3(
-		a.camera.Position.X-ep.X,
-		a.camera.Position.Y-ep.Y,
-		a.camera.Position.Z-ep.Z,
+		a.camera.camera.Position.X-ep.X,
+		a.camera.camera.Position.Y-ep.Y,
+		a.camera.camera.Position.Z-ep.Z,
 	)
 	fw := a.flight.Forward()
 	var bestID string
@@ -197,7 +197,7 @@ func (a *App) pinkMobInSight() (string, rl.Vector3) {
 
 func (a *App) houseInSight() string {
 	hs := a.nc.Houses()
-	cam := a.camera.Position
+	cam := a.camera.camera.Position
 	var bestID string
 	bestD2 := float32(36.0)
 	for _, h := range hs {
@@ -215,14 +215,14 @@ func (a *App) houseInSight() string {
 
 func (a *App) placeForward(dist float32) (x, y, z, yaw float32) {
 	fw := a.flight.Forward()
-	pos := rl.Vector3Add(a.camera.Position, rl.Vector3Scale(fw, dist))
+	pos := rl.Vector3Add(a.camera.camera.Position, rl.Vector3Scale(fw, dist))
 	yaw = float32(math.Atan2(float64(fw.X), float64(fw.Z)))
 	return pos.X, pos.Y, pos.Z, yaw
 }
 
 func (a *App) boatNearby() string {
 	bs := a.nc.Boats()
-	cam := a.camera.Position
+	cam := a.camera.camera.Position
 	me := a.nc.PlayerID()
 	var bestID string
 	bestD2 := float32(64.0)
@@ -244,7 +244,7 @@ func (a *App) boatNearby() string {
 
 func (a *App) saddledMammothNearby() string {
 	ms := a.nc.Mammoths()
-	cam := a.camera.Position
+	cam := a.camera.camera.Position
 	me := a.nc.PlayerID()
 	var bestID string
 	bestD2 := float32(36.0)
@@ -269,7 +269,7 @@ func (a *App) saddledMammothNearby() string {
 
 func (a *App) mammothInReach() string {
 	ms := a.nc.Mammoths()
-	cam := a.camera.Position
+	cam := a.camera.camera.Position
 	fw := a.flight.Forward()
 	var bestID string
 	bestD2 := float32(25.0)
@@ -300,9 +300,9 @@ func (a *App) seedInSight() string {
 	res := a.nc.Resources()
 	ep := a.nc.EarthPos()
 	cam := rl.NewVector3(
-		a.camera.Position.X-ep.X,
-		a.camera.Position.Y-ep.Y,
-		a.camera.Position.Z-ep.Z,
+		a.camera.camera.Position.X-ep.X,
+		a.camera.camera.Position.Y-ep.Y,
+		a.camera.camera.Position.Z-ep.Z,
 	)
 	fw := a.flight.Forward()
 	var bestID string

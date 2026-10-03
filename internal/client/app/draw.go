@@ -13,7 +13,7 @@ func (a *App) draw() {
 
 	// Камера уже в helio (flight.Pos в helio) — без сдвига.
 	epV := rl.NewVector3(a.world.earthPos.X, a.world.earthPos.Y, a.world.earthPos.Z)
-	camRender := a.camera
+	camRender := a.camera.camera
 
 	// Проверяем, изменился ли размер окна — пересоздаём UI-буфер.
 	sw := int32(rl.GetScreenWidth())
@@ -46,7 +46,7 @@ func (a *App) draw() {
 		a.scene.DrawWater()
 		a.scene.DrawClouds(camRender)
 		a.scene.DrawAtmosphere(camRender)
-		render.DrawPlayers(a.nc.InterpolatedSnapshot(), a.nc.PlayerID(), a.camera)
+		render.DrawPlayers(a.nc.InterpolatedSnapshot(), a.nc.PlayerID(), a.camera.camera)
 		render.DrawResources(a.nc.Resources())
 		render.DrawMammoths(a.nc.Mammoths())
 		render.DrawWells(a.nc.Wells())
@@ -62,7 +62,7 @@ func (a *App) draw() {
 		if me != "" {
 			for _, m := range a.nc.Mammoths() {
 				if m.LeashedTo == me {
-					camGeo := rl.Vector3Subtract(a.camera.Position, epV)
+					camGeo := rl.Vector3Subtract(a.camera.camera.Position, epV)
 					render.DrawLeash(camGeo,
 						rl.NewVector3(m.X, m.Y, m.Z))
 				}
