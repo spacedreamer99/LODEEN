@@ -158,6 +158,18 @@ Prod-оверрайды:
 
 Через 10 минут: k3s + ArgoCD + LODEEN задеплоены через GitOps.
 
+## Что ещё в репо
+
+- **Дизайн-документы**: `docs/` — LAUNCHER, MODS, FEDERATION, SECURITY, PROTOCOL
+- **ADR**: `docs/adr/` — 5 архитектурных решений (Deployment vs StatefulSet, alerting patterns, registry choice)
+- **RUNBOOK**: `docs/RUNBOOK.md` — что делать при типовых инцидентах
+- **Postmortem**: `docs/incidents/` — реальные инциденты, blameless формат
+- **CI security**: gitleaks, hadolint, trivy, cosign (план)
+- **Burn rate SLO**: multi-window multi-burn-rate алерты (Google SRE)
+- **Telegram alerts**: план (AlertmanagerConfig готов к настройке)
+- **Load test**: `cmd/loadtest` — 32 headless-бота, capacity results в PORTFOLIO
+- **Scripts**: `scripts/pf.sh` — поднять все port-forward одной командой
+
 ## Принципы
 
 **Безопасность** (из Linux):
@@ -222,10 +234,10 @@ Chain of Trust: каждый link — отдельный акт верифика
 - [x] docker-compose (PostgreSQL + Redis)
 - [x] CI (GitHub Actions: lint, test, build, docker, trivy)
 - [x] Образ в GHCR (публичный)
-- [x] k3d кластер + базовый деплой
-- [x] Helm-чарт
-- [x] ArgoCD (CD) — GitOps
-- [x] Prometheus + Grafana + дашборд
+- [x] k3d кластер + StatefulSet + PVC
+- [x] Helm-чарт (StatefulSet + PVC + headless Service)
+- [x] ArgoCD (CD) — GitOps + selfHeal
+- [x] Prometheus + Grafana + Alertmanager
 - [~] Terraform + Ansible (скелеты готовы, ждём VPS)
 
 ## Лицензия
