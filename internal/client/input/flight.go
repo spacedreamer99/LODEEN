@@ -111,12 +111,12 @@ func (f *FlightController) Update(dt float32, mouseDelta rl.Vector2) {
 	if f.Mode == ModeCreative {
 		wheel := rl.GetMouseWheelMove()
 		if wheel != 0 {
-			f.Speed *= 1.0 + wheel*0.1
-			if f.Speed < 5 {
-				f.Speed = 5
+			f.Speed *= 1.0 + wheel*0.3
+			if f.Speed < 10 {
+				f.Speed = 10
 			}
-			if f.Speed > 500 {
-				f.Speed = 500
+			if f.Speed > 5000 {
+				f.Speed = 5000
 			}
 		}
 	}
