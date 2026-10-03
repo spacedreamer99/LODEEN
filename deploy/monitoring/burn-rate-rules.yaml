@@ -1,0 +1,73 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: lodeen-burn-rate
+  namespace: monitoring
+  labels:
+    release: kps
+spec:
+  groups:
+    - name: lodeen.slo.burn-rate
+      interval: 30s
+      rules:
+        - record: lodeen:slo:tick_bad_ratio:rate5m
+          expr: |
+            1 - (
+              sum(rate(lodeen_tick_duration_seconds_bucket{le="0.005"}[5m]))
+              /
+              sum(rate(lodeen_tick_duration_seconds_count[5m]))
+            )
+
+        - record: lodeen:slo:tick_bad_ratio:rate1h
+          expr: |
+            1 - (
+              sum(rate(lodeen_tick_duration_seconds_bucket{le="0.005"}[1h]))
+              /
+              sum(rate(lodeen_tick_duration_seconds_count[1h]))
+            )
+
+        - record: lodeen:slo:tick_bad_ratio:rate6h
+          expr: |
+            1 - (
+              sum(rate(lodeen_tick_duration_seconds_bucket{le="0.005"}[6h]))
+              /
+              sum(rate(lodeen_tick_duration_seconds_count[6h]))
+            )
+
+        - record: lodeen:slo:tick_bad_ratio:rate3d
+          expr: |
+            1 - (
+              sum(rate(lodeen_tick_duration_seconds_bucket{le="0.005"}[3d]))
+              /
+              sum(rate(lodeen_tick_duration_seconds_count[3d]))
+            )
+
+        - alert: LodeenSLOFastBurn
+          expr: |
+            (
+              lodeen:slo:tick_bad_ratio:rate5m > (14.4 * 0.01)
+              and
+              lodeen:slo:tick_bad_ratio:rate1h > (14.4 * 0.01)
+            )
+          for: 2m
+          labels:
+            severity: critical
+            slo: "lodeen-tick-latency"
+          annotations:
+            summary: "LODEEN SLO fast burn — 2% budget in 1h"
+            description: "Burn rate {{ $value | humanize }}x. Page on-call."
+
+        - alert: LodeenSLOSlowBurn
+          expr: |
+            (
+              lodeen:slo:tick_bad_ratio:rate30m > (6 * 0.01)
+              and
+              lodeen:slo:tick_bad_ratio:rate6h > (6 * 0.01)
+            )
+          for: 15m
+          labels:
+            severity: warning
+            slo: "lodeen-tick-latency"
+          annotations:
+            summary: "LODEEN SLO slow burn — 5% budget in 6h"
+            description: "Burn rate {{ $value | humanize }}x. Create ticket."
