@@ -79,13 +79,13 @@ func (a *App) updatePlaying(dt float32) {
 
 // updateRocketMode возвращает true если пилотирование ракеты забрало кадр.
 func (a *App) updateRocketMode(dt float32) bool {
-	if a.rocketID == "" || a.flight == nil {
+	if a.player.rocketID == "" || a.flight == nil {
 		return false
 	}
 	if a.updatePilotedRocket(dt) {
 		return true
 	}
-	a.rocketID = ""
+	a.player.rocketID = ""
 	return false
 }
 
@@ -106,43 +106,43 @@ func (a *App) syncFlightBodies(dt float32) {
 func (a *App) applyUILock(dt float32) {
 	anyUI := a.ui.showInventory || a.ui.showCraft || a.ui.showContract || a.ui.showFactory || a.chat.Open
 	if a.flight == nil || !anyUI {
-		a.flightLocked = false
+		a.player.flightLocked = false
 		return
 	}
 
-	if !a.flightLocked {
-		a.flightLockedRelPos = protocol.Vector3{
+	if !a.player.flightLocked {
+		a.player.flightLockedRelPos = protocol.Vector3{
 			X: a.flight.Pos.X - a.world.earthPos.X,
 			Y: a.flight.Pos.Y - a.world.earthPos.Y,
 			Z: a.flight.Pos.Z - a.world.earthPos.Z,
 		}
-		a.flightLockedRelVel = protocol.Vector3{
+		a.player.flightLockedRelVel = protocol.Vector3{
 			X: a.flight.Vel.X - a.world.earthVel.X,
 			Y: a.flight.Vel.Y - a.world.earthVel.Y,
 			Z: a.flight.Vel.Z - a.world.earthVel.Z,
 		}
-		a.flightLocked = true
+		a.player.flightLocked = true
 		a.flight.RelPos = rl.NewVector3(
-			a.flightLockedRelPos.X, a.flightLockedRelPos.Y, a.flightLockedRelPos.Z)
+			a.player.flightLockedRelPos.X, a.player.flightLockedRelPos.Y, a.player.flightLockedRelPos.Z)
 		a.flight.RelVel = rl.NewVector3(
-			a.flightLockedRelVel.X, a.flightLockedRelVel.Y, a.flightLockedRelVel.Z)
+			a.player.flightLockedRelVel.X, a.player.flightLockedRelVel.Y, a.player.flightLockedRelVel.Z)
 		a.flight.RelInit = true
 	}
 
 	a.flight.Pos = rl.NewVector3(
-		a.world.earthPos.X+a.flightLockedRelPos.X,
-		a.world.earthPos.Y+a.flightLockedRelPos.Y,
-		a.world.earthPos.Z+a.flightLockedRelPos.Z,
+		a.world.earthPos.X+a.player.flightLockedRelPos.X,
+		a.world.earthPos.Y+a.player.flightLockedRelPos.Y,
+		a.world.earthPos.Z+a.player.flightLockedRelPos.Z,
 	)
 	a.flight.Vel = rl.NewVector3(
-		a.world.earthVel.X+a.flightLockedRelVel.X,
-		a.world.earthVel.Y+a.flightLockedRelVel.Y,
-		a.world.earthVel.Z+a.flightLockedRelVel.Z,
+		a.world.earthVel.X+a.player.flightLockedRelVel.X,
+		a.world.earthVel.Y+a.player.flightLockedRelVel.Y,
+		a.world.earthVel.Z+a.player.flightLockedRelVel.Z,
 	)
 	a.flight.RelPos = rl.NewVector3(
-		a.flightLockedRelPos.X, a.flightLockedRelPos.Y, a.flightLockedRelPos.Z)
+		a.player.flightLockedRelPos.X, a.player.flightLockedRelPos.Y, a.player.flightLockedRelPos.Z)
 	a.flight.RelVel = rl.NewVector3(
-		a.flightLockedRelVel.X, a.flightLockedRelVel.Y, a.flightLockedRelVel.Z)
+		a.player.flightLockedRelVel.X, a.player.flightLockedRelVel.Y, a.player.flightLockedRelVel.Z)
 
 	// Камера едет с Землёй без lerp — иначе при закрытии UI дёргается.
 	fw := a.flight.Forward()
@@ -174,9 +174,9 @@ func (a *App) syncHPFromNetwork() {
 	if a.nc == nil {
 		return
 	}
-	if hp := a.nc.OwnHP(); hp > 0 || a.hpReceived {
-		a.hp = hp
-		a.hpReceived = true
+	if hp := a.nc.OwnHP(); hp > 0 || a.player.hpReceived {
+		a.player.hp = hp
+		a.player.hpReceived = true
 	}
 }
 
@@ -273,10 +273,10 @@ func (a *App) updateSlotWheel() {
 
 func (a *App) syncHeldItem() {
 	held := a.heldItem()
-	if held == a.lastSentHeld {
+	if held == a.player.lastSentHeld {
 		return
 	}
-	a.lastSentHeld = held
+	a.player.lastSentHeld = held
 	if err := a.nc.SelectItem(held); err != nil {
 		a.log.Warn("select item", "err", err)
 	}
@@ -308,19 +308,19 @@ func (a *App) handleMountKey() {
 		return
 	}
 	switch {
-	case a.ridingID != "":
+	case a.player.ridingID != "":
 		if err := a.nc.RideMammoth(""); err != nil {
 			a.log.Warn("ride", "err", err)
 		}
-		a.ridingID = ""
+		a.player.ridingID = ""
 		a.flight.Riding = false
 		a.log.Info("dismount sent")
 
-	case a.boatID != "":
+	case a.player.boatID != "":
 		if err := a.nc.EnterBoat(""); err != nil {
 			a.log.Warn("boat exit", "err", err)
 		}
-		a.boatID = ""
+		a.player.boatID = ""
 		a.flight.InBoat = false
 		a.log.Info("boat exit sent")
 
@@ -329,7 +329,7 @@ func (a *App) handleMountKey() {
 			if err := a.nc.RideMammoth(id); err != nil {
 				a.log.Warn("ride", "err", err)
 			}
-			a.ridingID = id
+			a.player.ridingID = id
 			a.flight.Riding = true
 			a.log.Info("mount sent", "id", id)
 			return
@@ -338,7 +338,7 @@ func (a *App) handleMountKey() {
 			if err := a.nc.EnterBoat(id); err != nil {
 				a.log.Warn("boat enter", "err", err)
 			}
-			a.boatID = id
+			a.player.boatID = id
 			a.flight.InBoat = true
 			a.log.Info("boat enter sent", "id", id)
 		}
@@ -417,8 +417,8 @@ func (a *App) handleEmptyHandClick() bool {
 		if err := a.nc.BoardRocket(id); err != nil {
 			a.log.Warn("board rocket", "err", err)
 		}
-		a.rocketID = id
-		a.rocketBoardedAt = time.Now()
+		a.player.rocketID = id
+		a.player.rocketBoardedAt = time.Now()
 		a.log.Info("board rocket sent", "id", id)
 		return true
 	}
@@ -466,7 +466,7 @@ func (a *App) throwSpear() {
 		a.log.Warn("throw spear", "err", err)
 	}
 	ep := a.nc.EarthPos()
-	a.projectiles = append(a.projectiles, projectile{
+	a.player.projectiles = append(a.player.projectiles, projectile{
 		pos: rl.NewVector3(
 			a.camera.camera.Position.X-ep.X,
 			a.camera.camera.Position.Y-ep.Y,
@@ -543,7 +543,7 @@ func (a *App) placeStructure(kind string) {
 // --- Переходы состояний ---
 
 func (a *App) checkDeath() bool {
-	if !a.hpReceived || a.myHP() > 0 {
+	if !a.player.hpReceived || a.myHP() > 0 {
 		return false
 	}
 	a.log.Info("player HP zero, switching to death screen")

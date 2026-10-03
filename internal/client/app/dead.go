@@ -19,16 +19,16 @@ func (a *App) updateDead() {
 
 func (a *App) respawn() {
 	a.log.Info("respawn")
-	a.hp = 100
-	a.hpReceived = false
+	a.player.hp = 100
+	a.player.hpReceived = false
 	a.startConnect()
 	rl.DisableCursor()
 }
 
 func (a *App) returnToMenu() {
 	a.log.Info("return to menu")
-	a.hp = 100
-	a.hpReceived = false
+	a.player.hp = 100
+	a.player.hpReceived = false
 	a.mode = state.ModeMenu
 	rl.EnableCursor()
 	rl.ShowCursor()

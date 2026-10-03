@@ -107,7 +107,7 @@ func (a *App) draw() {
 		if a.ui.showFactory {
 			a.drawFactory()
 		}
-		if a.rocketID != "" {
+		if a.player.rocketID != "" {
 			a.drawRocketHUD()
 			a.drawNavBall()
 		}
