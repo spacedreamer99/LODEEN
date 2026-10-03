@@ -147,10 +147,10 @@ func (s *Server) collectFactories() []protocol.Factory {
 
 // collectRockets — ракеты со всей орбитальной телеметрией.
 func (s *Server) collectRockets() []protocol.Rocket {
-	s.rocketsMu.RLock()
-	defer s.rocketsMu.RUnlock()
-	out := make([]protocol.Rocket, 0, len(s.rockets))
-	for _, r := range s.rockets {
+	s.rockets.RLock()
+	defer s.rockets.RUnlock()
+	out := make([]protocol.Rocket, 0, len(s.rockets.Map()))
+	for _, r := range s.rockets.Map() {
 		out = append(out, protocol.Rocket{
 			ID: r.ID,
 			X:  r.Pos.X, Y: r.Pos.Y, Z: r.Pos.Z,
