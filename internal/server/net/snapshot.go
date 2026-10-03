@@ -204,6 +204,8 @@ func (s *Server) broadcastSnapshot() {
 		return
 	}
 
+	s.metrics.SnapshotBytes.Observe(float64(len(raw)))
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, c := range s.clients {
