@@ -21,6 +21,9 @@ func TestHandshakeAndChat(t *testing.T) {
 		PlayersConnected: prometheus.NewGauge(prometheus.GaugeOpts{Name: "test_players"}),
 		TicksTotal:       prometheus.NewCounter(prometheus.CounterOpts{Name: "test_ticks"}),
 		ChatMessages:     prometheus.NewCounter(prometheus.CounterOpts{Name: "test_chat"}),
+		TickDuration:     prometheus.NewHistogram(prometheus.HistogramOpts{Name: "test_tick_dur"}),
+		SnapshotBytes:    prometheus.NewHistogram(prometheus.HistogramOpts{Name: "test_snap_bytes"}),
+		RTTSeconds:       prometheus.NewHistogram(prometheus.HistogramOpts{Name: "test_rtt"}),
 	}
 
 	srv := servernet.New("127.0.0.1:0", 20, log, m)

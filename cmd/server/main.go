@@ -54,6 +54,9 @@ func run() error {
 			Name: "lodeen_server_chat_messages_total",
 			Help: "Total number of chat messages.",
 		}),
+		TickDuration:  metrics.TickDuration,
+		SnapshotBytes: metrics.SnapshotBytes,
+		RTTSeconds:    metrics.RTTSeconds,
 	}
 	reg.MustRegister(srvMetrics.PlayersConnected, srvMetrics.TicksTotal, srvMetrics.ChatMessages)
 
