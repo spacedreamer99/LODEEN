@@ -95,9 +95,9 @@ func (a *App) syncFlightBodies(dt float32) {
 	if a.flight == nil {
 		return
 	}
-	a.flight.EarthPos = rl.NewVector3(a.earthPos.X, a.earthPos.Y, a.earthPos.Z)
+	a.flight.EarthPos = rl.NewVector3(a.world.earthPos.X, a.world.earthPos.Y, a.world.earthPos.Z)
 	a.flight.SunPos = rl.NewVector3(protocol.SunPos.X, protocol.SunPos.Y, protocol.SunPos.Z)
-	a.flight.EarthVel = rl.NewVector3(a.earthVel.X, a.earthVel.Y, a.earthVel.Z)
+	a.flight.EarthVel = rl.NewVector3(a.world.earthVel.X, a.world.earthVel.Y, a.world.earthVel.Z)
 	a.flight.SyncToEarthFrame(dt)
 }
 
@@ -112,14 +112,14 @@ func (a *App) applyUILock(dt float32) {
 
 	if !a.flightLocked {
 		a.flightLockedRelPos = protocol.Vector3{
-			X: a.flight.Pos.X - a.earthPos.X,
-			Y: a.flight.Pos.Y - a.earthPos.Y,
-			Z: a.flight.Pos.Z - a.earthPos.Z,
+			X: a.flight.Pos.X - a.world.earthPos.X,
+			Y: a.flight.Pos.Y - a.world.earthPos.Y,
+			Z: a.flight.Pos.Z - a.world.earthPos.Z,
 		}
 		a.flightLockedRelVel = protocol.Vector3{
-			X: a.flight.Vel.X - a.earthVel.X,
-			Y: a.flight.Vel.Y - a.earthVel.Y,
-			Z: a.flight.Vel.Z - a.earthVel.Z,
+			X: a.flight.Vel.X - a.world.earthVel.X,
+			Y: a.flight.Vel.Y - a.world.earthVel.Y,
+			Z: a.flight.Vel.Z - a.world.earthVel.Z,
 		}
 		a.flightLocked = true
 		a.flight.RelPos = rl.NewVector3(
@@ -130,14 +130,14 @@ func (a *App) applyUILock(dt float32) {
 	}
 
 	a.flight.Pos = rl.NewVector3(
-		a.earthPos.X+a.flightLockedRelPos.X,
-		a.earthPos.Y+a.flightLockedRelPos.Y,
-		a.earthPos.Z+a.flightLockedRelPos.Z,
+		a.world.earthPos.X+a.flightLockedRelPos.X,
+		a.world.earthPos.Y+a.flightLockedRelPos.Y,
+		a.world.earthPos.Z+a.flightLockedRelPos.Z,
 	)
 	a.flight.Vel = rl.NewVector3(
-		a.earthVel.X+a.flightLockedRelVel.X,
-		a.earthVel.Y+a.flightLockedRelVel.Y,
-		a.earthVel.Z+a.flightLockedRelVel.Z,
+		a.world.earthVel.X+a.flightLockedRelVel.X,
+		a.world.earthVel.Y+a.flightLockedRelVel.Y,
+		a.world.earthVel.Z+a.flightLockedRelVel.Z,
 	)
 	a.flight.RelPos = rl.NewVector3(
 		a.flightLockedRelPos.X, a.flightLockedRelPos.Y, a.flightLockedRelPos.Z)
@@ -562,18 +562,18 @@ func (a *App) checkPause() bool {
 	}
 	if a.flight != nil && a.flight.HelioInit {
 		a.pausedRelPos = protocol.Vector3{
-			X: a.flight.Pos.X - a.earthPos.X,
-			Y: a.flight.Pos.Y - a.earthPos.Y,
-			Z: a.flight.Pos.Z - a.earthPos.Z,
+			X: a.flight.Pos.X - a.world.earthPos.X,
+			Y: a.flight.Pos.Y - a.world.earthPos.Y,
+			Z: a.flight.Pos.Z - a.world.earthPos.Z,
 		}
 		a.pausedRelVel = protocol.Vector3{
-			X: a.flight.Vel.X - a.earthVel.X,
-			Y: a.flight.Vel.Y - a.earthVel.Y,
-			Z: a.flight.Vel.Z - a.earthVel.Z,
+			X: a.flight.Vel.X - a.world.earthVel.X,
+			Y: a.flight.Vel.Y - a.world.earthVel.Y,
+			Z: a.flight.Vel.Z - a.world.earthVel.Z,
 		}
 		a.log.Info("PAUSE ENTERED",
 			"helio", fmt.Sprintf("%.2f,%.2f,%.2f", a.flight.Pos.X, a.flight.Pos.Y, a.flight.Pos.Z),
-			"earth", fmt.Sprintf("%.2f,%.2f,%.2f", a.earthPos.X, a.earthPos.Y, a.earthPos.Z),
+			"earth", fmt.Sprintf("%.2f,%.2f,%.2f", a.world.earthPos.X, a.world.earthPos.Y, a.world.earthPos.Z),
 			"relPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.pausedRelPos.X, a.pausedRelPos.Y, a.pausedRelPos.Z),
 			"relVel", fmt.Sprintf("%.3f,%.3f,%.3f", a.pausedRelVel.X, a.pausedRelVel.Y, a.pausedRelVel.Z))
 	}
@@ -593,28 +593,28 @@ func (a *App) updateUnfocusFreeze() bool {
 	}
 	if !a.unfocusFreeze {
 		a.unfocusRelPos = protocol.Vector3{
-			X: a.flight.Pos.X - a.earthPos.X,
-			Y: a.flight.Pos.Y - a.earthPos.Y,
-			Z: a.flight.Pos.Z - a.earthPos.Z,
+			X: a.flight.Pos.X - a.world.earthPos.X,
+			Y: a.flight.Pos.Y - a.world.earthPos.Y,
+			Z: a.flight.Pos.Z - a.world.earthPos.Z,
 		}
 		a.unfocusRelVel = protocol.Vector3{
-			X: a.flight.Vel.X - a.earthVel.X,
-			Y: a.flight.Vel.Y - a.earthVel.Y,
-			Z: a.flight.Vel.Z - a.earthVel.Z,
+			X: a.flight.Vel.X - a.world.earthVel.X,
+			Y: a.flight.Vel.Y - a.world.earthVel.Y,
+			Z: a.flight.Vel.Z - a.world.earthVel.Z,
 		}
 		a.unfocusFreeze = true
 		a.log.Info("UNFOCUS freeze",
 			"relPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.unfocusRelPos.X, a.unfocusRelPos.Y, a.unfocusRelPos.Z))
 	}
 	a.flight.Pos = rl.NewVector3(
-		a.earthPos.X+a.unfocusRelPos.X,
-		a.earthPos.Y+a.unfocusRelPos.Y,
-		a.earthPos.Z+a.unfocusRelPos.Z,
+		a.world.earthPos.X+a.unfocusRelPos.X,
+		a.world.earthPos.Y+a.unfocusRelPos.Y,
+		a.world.earthPos.Z+a.unfocusRelPos.Z,
 	)
 	a.flight.Vel = rl.NewVector3(
-		a.earthVel.X+a.unfocusRelVel.X,
-		a.earthVel.Y+a.unfocusRelVel.Y,
-		a.earthVel.Z+a.unfocusRelVel.Z,
+		a.world.earthVel.X+a.unfocusRelVel.X,
+		a.world.earthVel.Y+a.unfocusRelVel.Y,
+		a.world.earthVel.Z+a.unfocusRelVel.Z,
 	)
 	fw := a.flight.Forward()
 	a.camera.Position = a.flight.Pos
@@ -630,7 +630,7 @@ func (a *App) restoreFocus() {
 	a.unfocusFreeze = false
 	a.log.Info("UNFOCUS restored",
 		"helio", fmt.Sprintf("%.2f,%.2f,%.2f", a.flight.Pos.X, a.flight.Pos.Y, a.flight.Pos.Z),
-		"earth", fmt.Sprintf("%.2f,%.2f,%.2f", a.earthPos.X, a.earthPos.Y, a.earthPos.Z))
+		"earth", fmt.Sprintf("%.2f,%.2f,%.2f", a.world.earthPos.X, a.world.earthPos.Y, a.world.earthPos.Z))
 }
 
 // --- Физика и камера ---
@@ -642,7 +642,7 @@ func (a *App) updateFlightPhysics(dt float32) {
 	}
 
 	// HelioInit — только когда EarthPos реально пришла.
-	epLen := a.earthPos.X*a.earthPos.X + a.earthPos.Y*a.earthPos.Y + a.earthPos.Z*a.earthPos.Z
+	epLen := a.world.earthPos.X*a.world.earthPos.X + a.world.earthPos.Y*a.world.earthPos.Y + a.world.earthPos.Z*a.world.earthPos.Z
 	if !a.flight.HelioInit && epLen > 100*100 {
 		a.flight.Pos = rl.Vector3Add(a.flight.Pos, a.flight.EarthPos)
 		a.flight.HelioInit = true
@@ -676,9 +676,9 @@ func (a *App) logFlightDiag(dt float32, md rl.Vector2) {
 		edgeKeys = keys
 	}
 
-	relX := a.flight.Pos.X - a.earthPos.X
-	relY := a.flight.Pos.Y - a.earthPos.Y
-	relZ := a.flight.Pos.Z - a.earthPos.Z
+	relX := a.flight.Pos.X - a.world.earthPos.X
+	relY := a.flight.Pos.Y - a.world.earthPos.Y
+	relZ := a.flight.Pos.Z - a.world.earthPos.Z
 	relDist := float32(math.Sqrt(float64(relX*relX + relY*relY + relZ*relZ)))
 	surfaceR := protocol.SurfaceRadius(protocol.Vector3{X: relX, Y: relY, Z: relZ})
 	minR := surfaceR + protocol.PlayerHeight
@@ -687,8 +687,8 @@ func (a *App) logFlightDiag(dt float32, md rl.Vector2) {
 	a.log.Info("state",
 		"dt", fmt.Sprintf("%.4f", dt),
 		"helioPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.flight.Pos.X, a.flight.Pos.Y, a.flight.Pos.Z),
-		"earthPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.earthPos.X, a.earthPos.Y, a.earthPos.Z),
-		"earthVel", fmt.Sprintf("%.3f,%.3f,%.3f", a.earthVel.X, a.earthVel.Y, a.earthVel.Z),
+		"earthPos", fmt.Sprintf("%.2f,%.2f,%.2f", a.world.earthPos.X, a.world.earthPos.Y, a.world.earthPos.Z),
+		"earthVel", fmt.Sprintf("%.3f,%.3f,%.3f", a.world.earthVel.X, a.world.earthVel.Y, a.world.earthVel.Z),
 		"relDist", fmt.Sprintf("%.3f", relDist),
 		"minR", fmt.Sprintf("%.3f", minR),
 		"onGround", onGround,
@@ -734,9 +734,9 @@ func (a *App) emitPlayerState() {
 	yawF := float32(math.Atan2(float64(-fw.X), float64(-fw.Z)))
 	pitchF := float32(math.Asin(float64(fw.Y)))
 	a.nc.SetState(protocol.PlayerState{
-		X:   a.flight.Pos.X - a.earthPos.X,
-		Y:   a.flight.Pos.Y - a.earthPos.Y,
-		Z:   a.flight.Pos.Z - a.earthPos.Z,
+		X:   a.flight.Pos.X - a.world.earthPos.X,
+		Y:   a.flight.Pos.Y - a.world.earthPos.Y,
+		Z:   a.flight.Pos.Z - a.world.earthPos.Z,
 		Yaw: yawF, Pitch: pitchF,
 	})
 }

@@ -12,7 +12,7 @@ import (
 func (a *App) draw() {
 
 	// Камера уже в helio (flight.Pos в helio) — без сдвига.
-	epV := rl.NewVector3(a.earthPos.X, a.earthPos.Y, a.earthPos.Z)
+	epV := rl.NewVector3(a.world.earthPos.X, a.world.earthPos.Y, a.world.earthPos.Z)
 	camRender := a.camera
 
 	// Проверяем, изменился ли размер окна — пересоздаём UI-буфер.
@@ -80,7 +80,7 @@ func (a *App) draw() {
 		// Солнце — helio-объект, в реальной позиции.
 		a.scene.DrawSun3D(camRender)
 		a.scene.DrawStar2(camRender)
-		a.scene.DrawPlanet2(camRender, a.planet2Pos)
+		a.scene.DrawPlanet2(camRender, a.world.planet2Pos)
 		rl.EndMode3D()
 	}
 

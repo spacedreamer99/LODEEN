@@ -243,9 +243,9 @@ func (a *App) drawDebugOverlay() {
 	fonts.Draw(helioStr, x, y, 14, col)
 	y += 18
 
-	relX := a.flight.Pos.X - a.earthPos.X
-	relY := a.flight.Pos.Y - a.earthPos.Y
-	relZ := a.flight.Pos.Z - a.earthPos.Z
+	relX := a.flight.Pos.X - a.world.earthPos.X
+	relY := a.flight.Pos.Y - a.world.earthPos.Y
+	relZ := a.flight.Pos.Z - a.world.earthPos.Z
 	relDist := float32(math.Sqrt(float64(relX*relX + relY*relY + relZ*relZ)))
 	geoStr := fmt.Sprintf("GEO  %.1f %.1f %.1f  |r|=%.2f",
 		relX, relY, relZ, relDist)
@@ -285,11 +285,11 @@ func (a *App) drawDebugOverlay() {
 	y += 18
 
 	earthStr := fmt.Sprintf("EARTH %.1f %.1f %.1f",
-		a.earthPos.X, a.earthPos.Y, a.earthPos.Z)
+		a.world.earthPos.X, a.world.earthPos.Y, a.world.earthPos.Z)
 	fonts.Draw(earthStr, x, y, 14, colDim)
 	y += 18
 	earthVelStr := fmt.Sprintf("EVEL %.2f %.2f %.2f",
-		a.earthVel.X, a.earthVel.Y, a.earthVel.Z)
+		a.world.earthVel.X, a.world.earthVel.Y, a.world.earthVel.Z)
 	fonts.Draw(earthVelStr, x, y, 14, colDim)
 }
 
@@ -307,7 +307,7 @@ func (a *App) drawMiniStatus() {
 		bodyPos = protocol.SunPos
 		bodyRadius = protocol.SunRadius
 	} else {
-		bodyPos = a.earthPos
+		bodyPos = a.world.earthPos
 	}
 
 	relX := a.flight.Pos.X - bodyPos.X
@@ -324,7 +324,7 @@ func (a *App) drawMiniStatus() {
 	// Скорость относительно тела.
 	var bodyVel protocol.Vector3
 	if bodyName == "EARTH" {
-		bodyVel = a.earthVel
+		bodyVel = a.world.earthVel
 	}
 	relVx := a.flight.Vel.X - bodyVel.X
 	relVy := a.flight.Vel.Y - bodyVel.Y
@@ -387,5 +387,5 @@ func (a *App) drawMiniStatus() {
 }
 
 func (a *App) earthPosAsRl() rl.Vector3 {
-	return rl.NewVector3(a.earthPos.X, a.earthPos.Y, a.earthPos.Z)
+	return rl.NewVector3(a.world.earthPos.X, a.world.earthPos.Y, a.world.earthPos.Z)
 }

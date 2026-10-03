@@ -90,19 +90,9 @@ type App struct {
 	rocketNoseZ        float32
 	rocketNoseInit     bool
 
-	earthPos   protocol.Vector3
-	earthVel   protocol.Vector3
-	planet2Pos protocol.Vector3
-	planet2Vel protocol.Vector3
-
-	earthPosSmooth protocol.Vector3
-	earthPosInit   bool
-
 	pausedRelPos protocol.Vector3
 	pausedRelVel protocol.Vector3
 
-	earthHistory    []earthSnap
-	lastServerEP    protocol.Vector3
 	unfocusFreeze   bool
 	unfocusRelPos   protocol.Vector3
 	unfocusRelVel   protocol.Vector3
@@ -113,8 +103,9 @@ type App struct {
 	renderTickInit  bool
 	tickRate        float64
 
-	diag DiagState
-	ui   UIState
+	diag  DiagState
+	ui    UIState
+	world WorldState
 }
 
 func New(cfg *config.Config, log *slog.Logger) *App {
@@ -210,13 +201,6 @@ func (a *App) setCursorCaptured(c bool) {
 		rl.EnableCursor()
 		rl.ShowCursor()
 	}
-}
-
-type earthSnap struct {
-	tick uint64
-	pos  protocol.Vector3
-	vel  protocol.Vector3
-	at   time.Time
 }
 
 // resizeUITarget пересоздаёт UI-буфер под текущий размер окна.
