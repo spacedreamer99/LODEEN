@@ -1,0 +1,16 @@
+apiVersion: v2
+name: lodeen
+description: LODEEN world server — stateful multiplayer game server
+type: application
+version: 0.1.0
+appVersion: "v0.1-frozen"
+home: https://github.com/spacedreamer99/LODEEN
+sources:
+  - https://github.com/spacedreamer99/LODEEN
+maintainers:
+  - name: spacedreamer99
+keywords:
+  - game
+  - multiplayer
+  - go
+  - stateful

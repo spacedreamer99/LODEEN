@@ -1,0 +1,32 @@
+# Dev overrides: local image, relaxed probes, no PDB.
+replicaCount: 1
+
+image:
+  repository: lodeen-server
+  tag: dev
+  pullPolicy: IfNotPresent
+
+env:
+  LODEEN_ENV: "dev"
+  LODEEN_LOG_LEVEL: "debug"
+  LODEEN_SERVER_TCP_ADDR: ":7777"
+  LODEEN_SERVER_ADMIN_ADDR: ":9091"
+  LODEEN_SERVER_TICK_RATE: "20"
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 32Mi
+  limits:
+    cpu: 500m
+    memory: 128Mi
+
+podDisruptionBudget:
+  enabled: false
+
+serviceMonitor:
+  enabled: true
+  releaseLabel: kps
+
+networkPolicy:
+  enabled: false
