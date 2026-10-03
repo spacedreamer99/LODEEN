@@ -2,7 +2,7 @@
 replicaCount: 1
 
 image:
-  repository: lodeen-server
+  repository: lodeen-registry:5000/lodeen-server
   tag: dev
   pullPolicy: IfNotPresent
 
