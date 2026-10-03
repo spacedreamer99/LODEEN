@@ -1,13 +1,15 @@
 // Package net implements the LODEEN TCP game server.
+//
+// Layout:
+//   - server.go      — Server struct, lifecycle (New/Start/Stop)
+//   - server_conn.go — accept loop, per-connection handshake + IO
+//   - server_tick.go — fixed-dt tick loop + per-tick phases
+//   - server_util.go — broadcast, frame decode, ID generation
 package net
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"sync"
@@ -34,6 +36,8 @@ type Metrics struct {
 	RTTSeconds       prometheus.Histogram
 }
 
+// Server — корневой объект игрового сервера.
+// Хранит: реестр клиентов, состояние мира, доменные map'ы сущностей.
 type Server struct {
 	addr     string
 	tickRate int
@@ -116,6 +120,7 @@ func New(addr string, tickRate int, log *slog.Logger, m *Metrics) *Server {
 	return s
 }
 
+// Start запускает listener и два фоновых loop'а: accept + tick.
 func (s *Server) Start() error {
 	ln, err := net.Listen("tcp", s.addr)
 	if err != nil {
@@ -129,6 +134,7 @@ func (s *Server) Start() error {
 	return nil
 }
 
+// Stop закрывает listener и все клиентские соединения, ждёт завершения loop'ов.
 func (s *Server) Stop(ctx context.Context) error {
 	s.closeOnce.Do(func() {
 		close(s.done)
@@ -151,267 +157,10 @@ func (s *Server) Stop(ctx context.Context) error {
 	}
 }
 
+// Addr возвращает реальный адрес listener'а (полезно при addr=":0").
 func (s *Server) Addr() string {
 	if s.ln == nil {
 		return ""
 	}
 	return s.ln.Addr().String()
-}
-
-func (s *Server) acceptLoop() {
-	defer s.wg.Done()
-	for {
-		conn, err := s.ln.Accept()
-		if err != nil {
-			select {
-			case <-s.done:
-				return
-			default:
-				s.log.Warn("accept error", "err", err)
-				continue
-			}
-		}
-		s.wg.Add(1)
-		go s.handleConn(conn)
-	}
-}
-
-func (s *Server) handleConn(conn net.Conn) {
-	defer s.wg.Done()
-
-	id := newID()
-	log := s.log.With("id", id, "remote", conn.RemoteAddr().String())
-
-	client := &Client{
-		ID:        id,
-		conn:      conn,
-		send:      make(chan []byte, sendBufSize),
-		done:      make(chan struct{}),
-		log:       log,
-		inventory: make(map[string]int),
-		hunger:    100,
-		hp:        100,
-	}
-
-	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
-	env, err := readEnvelope(conn)
-	if err != nil {
-		log.Warn("hello read failed", "err", err)
-		_ = conn.Close()
-		return
-	}
-	if env.Type != protocol.TypeHello {
-		log.Warn("expected hello", "got", string(env.Type))
-		_ = conn.Close()
-		return
-	}
-	var hello protocol.Hello
-	if err := env.Decode(&hello); err != nil {
-		log.Warn("hello decode failed", "err", err)
-		_ = conn.Close()
-		return
-	}
-	if hello.Nick == "" {
-		hello.Nick = "anon-" + id[:6]
-	}
-	client.Nick = hello.Nick
-	client.setState(protocol.PlayerState{ID: id, Nick: hello.Nick})
-	_ = conn.SetReadDeadline(time.Time{})
-
-	client.sendEnvelope(protocol.TypeWelcome, protocol.Welcome{
-		PlayerID:      id,
-		WorldName:     "lodeen-flat",
-		TickRate:      s.tickRate,
-		ServerVersion: "dev",
-	})
-	client.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{
-		Items: map[string]int{},
-	})
-
-	s.mu.Lock()
-	s.clients[id] = client
-	s.mu.Unlock()
-	s.metrics.PlayersConnected.Inc()
-	log.Info("player joined", "nick", client.Nick)
-
-	writerDone := make(chan struct{})
-	go func() { defer close(writerDone); s.writeLoop(client) }()
-
-	s.readLoop(client)
-
-	client.closeOnce.Do(func() { close(client.done) })
-	s.mu.Lock()
-	delete(s.clients, id)
-	s.mu.Unlock()
-	s.metrics.PlayersConnected.Dec()
-
-	// Освободить ракеты, лодки, мамонтов этого игрока.
-	s.rocketsMu.Lock()
-	for _, r := range s.rockets {
-		if r.OwnerID == id {
-			r.Piloted = false
-			r.OwnerID = ""
-			r.Thrust = 0
-		}
-	}
-	s.rocketsMu.Unlock()
-	_ = conn.Close()
-	<-writerDone
-	log.Info("player left", "nick", client.Nick)
-}
-
-func (s *Server) readLoop(c *Client) {
-	for {
-		_ = c.conn.SetReadDeadline(time.Now().Add(readTimeout))
-		env, err := readEnvelope(c.conn)
-		if err != nil {
-			return
-		}
-		s.handleMessage(c, env)
-	}
-}
-
-func (s *Server) writeLoop(c *Client) {
-	for {
-		select {
-		case payload := <-c.send:
-			_ = c.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
-			if err := protocol.WriteFrame(c.conn, payload); err != nil {
-				return
-			}
-		case <-c.done:
-			return
-		case <-s.done:
-			return
-		}
-	}
-}
-
-func (s *Server) broadcast(t protocol.Type, data any) {
-	env, err := protocol.NewEnvelope(t, data)
-	if err != nil {
-		return
-	}
-	raw, err := json.Marshal(env)
-	if err != nil {
-		return
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, c := range s.clients {
-		c.enqueue(raw)
-	}
-}
-
-func (s *Server) tickLoop() {
-	defer s.wg.Done()
-
-	tickDur := time.Duration(float64(time.Second) / float64(s.tickRate))
-	next := time.Now().Add(tickDur)
-	lastTick := time.Now()
-
-	for {
-		select {
-		case <-s.done:
-			return
-		default:
-		}
-
-		now := time.Now()
-		if now.Before(next) {
-			time.Sleep(next.Sub(now))
-			continue
-		}
-
-		// Физика — ВСЕГДА fixed dt. Это критично: иначе снапшоты
-		// идут неравномерно, и клиент интерполирует с дрожанием.
-		realDt := now.Sub(lastTick).Seconds()
-		lastTick = now
-		_ = realDt
-
-		// Fixed dt.
-		dtF := float32(1.0) / float32(s.tickRate)
-		dt := float64(dtF)
-
-		s.tick++
-		s.metrics.TicksTotal.Inc()
-
-		tickStart := time.Now()
-
-		s.tickHunger(dt)
-		s.tickMammoths(dtF)
-		s.tickBoats()
-		s.tickMobs(dtF)
-		s.tickProjectiles(dtF)
-		s.tickBreeding()
-		s.tickResources()
-		s.tickEnergy(dtF)
-		s.world.Tick(dtF)
-		s.tickRockets(dtF)
-		s.broadcastSnapshot()
-
-		s.metrics.TickDuration.Observe(time.Since(tickStart).Seconds())
-
-		// Следующий тик.
-		next = next.Add(tickDur)
-		// Если сильно отстали — сбросить планку.
-		if time.Since(next) > 200*time.Millisecond {
-			next = time.Now().Add(tickDur)
-		}
-	}
-}
-
-func (s *Server) tickHunger(dt float64) {
-	const hungerRate = 0.333
-	const autoEatThreshold = 50.0
-	const fruitValue = 20.0
-
-	dec := float32(hungerRate * dt)
-
-	s.mu.RLock()
-	clients := make([]*Client, 0, len(s.clients))
-	for _, c := range s.clients {
-		clients = append(clients, c)
-	}
-	s.mu.RUnlock()
-
-	for _, c := range clients {
-		c.addHunger(-dec)
-
-		// Автосъедание: fruit (20), затем meat (30)
-		for c.Hunger() < autoEatThreshold {
-			eaten := ""
-			if c.consumeItem("fruit") {
-				c.addHunger(20)
-				eaten = "fruit"
-			} else if c.consumeItem("meat") {
-				c.addHunger(30)
-				eaten = "meat"
-			}
-			if eaten == "" {
-				break
-			}
-			inv := c.inventorySnapshot()
-			c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
-			c.log.Info("auto-ate", "item", eaten, "hunger", c.Hunger())
-		}
-	}
-}
-
-func readEnvelope(r io.Reader) (*protocol.Envelope, error) {
-	payload, err := protocol.ReadFrame(r)
-	if err != nil {
-		return nil, err
-	}
-	var env protocol.Envelope
-	if err := json.Unmarshal(payload, &env); err != nil {
-		return nil, err
-	}
-	return &env, nil
-}
-
-func newID() string {
-	var b [8]byte
-	_, _ = rand.Read(b[:])
-	return hex.EncodeToString(b[:])
 }
