@@ -51,10 +51,6 @@ type App struct {
 	uiTargetW int32
 	uiTargetH int32
 
-	debugFrame int
-	cachedFPS  int32
-	lastFPSAt  time.Time
-
 	cursorCaptured bool
 	quit           bool
 	showInventory  bool
@@ -63,15 +59,11 @@ type App struct {
 	projectiles    []projectile
 	startAt        time.Time
 
-	lastKeys         string
 	lastSentHeld     string
 	ridingID         string
 	hp               int
 	hpReceived       bool
 	boatID           string
-	lastMouse        string
-	lastLogAt        time.Time
-	lastPos          rl.Vector3
 	contractMobID    string
 	contractPos      rl.Vector3
 	showContract     bool
@@ -122,8 +114,6 @@ type App struct {
 	planet2Pos protocol.Vector3
 	planet2Vel protocol.Vector3
 
-	showDebug bool
-
 	earthPosSmooth protocol.Vector3
 	earthPosInit   bool
 
@@ -141,7 +131,8 @@ type App struct {
 	renderTick      float64
 	renderTickInit  bool
 	tickRate        float64
-	diagFrames      int
+
+	diag DiagState
 }
 
 func New(cfg *config.Config, log *slog.Logger) *App {

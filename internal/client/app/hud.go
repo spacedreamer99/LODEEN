@@ -36,17 +36,17 @@ func (a *App) drawHUD() {
 
 	// FPS — левый верх
 	now := time.Now()
-	if now.Sub(a.lastFPSAt) > 500*time.Millisecond {
+	if now.Sub(a.diag.lastFPSAt) > 500*time.Millisecond {
 		// Не показываем FPS первые 2 секунды — окно ещё не стабилизировалось.
 		if now.Sub(a.startAt) > 2*time.Second {
-			a.cachedFPS = rl.GetFPS()
+			a.diag.cachedFPS = rl.GetFPS()
 		} else {
-			a.cachedFPS = 0
+			a.diag.cachedFPS = 0
 		}
-		a.lastFPSAt = now
+		a.diag.lastFPSAt = now
 	}
-	if a.cachedFPS > 0 {
-		fonts.Draw(fmt.Sprintf("FPS: %d", a.cachedFPS), pad, pad, 18, rl.RayWhite)
+	if a.diag.cachedFPS > 0 {
+		fonts.Draw(fmt.Sprintf("FPS: %d", a.diag.cachedFPS), pad, pad, 18, rl.RayWhite)
 	}
 
 	// Полоска голода под FPS
@@ -226,7 +226,7 @@ func (a *App) drawHotbar() {
 }
 
 func (a *App) drawDebugOverlay() {
-	if !a.showDebug || a.flight == nil {
+	if !a.diag.showDebug || a.flight == nil {
 		return
 	}
 	sw := int32(rl.GetScreenWidth())

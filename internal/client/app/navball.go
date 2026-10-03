@@ -13,7 +13,7 @@ func (a *App) drawNavBall() {
 	if r.ID == "" {
 		return
 	}
-	if a.debugFrame%60 == 0 {
+	if a.diag.debugFrame%60 == 0 {
 		a.log.Info("navball draw",
 			"id", r.ID,
 			"dx", r.DX, "dy", r.DY, "dz", r.DZ,
