@@ -136,45 +136,65 @@ func (s *Server) tickPinkFlee(m *Mob, dt float32) {
 }
 
 // tickPinkGather — собирает 4 ресурса и несёт владельцу.
+// pinkGatherTarget — сколько ресурсов пинк должен собрать до доставки.
+const pinkGatherTarget = 4
+
+// tickPinkGather — оркестратор режима «собираю и доставляю»:
+// собрал >= pinkGatherTarget → доставка владельцу, иначе → поиск и сбор ресурсов.
 func (s *Server) tickPinkGather(m *Mob, dt float32) {
-	// Сколько уже собрал.
+	if pinkInventoryCount(m) >= pinkGatherTarget {
+		s.pinkGatherDeliver(m, dt)
+		return
+	}
+	s.pinkGatherPick(m, dt)
+}
+
+// pinkInventoryCount — суммарное количество предметов в инвентаре моба.
+func pinkInventoryCount(m *Mob) int {
 	total := 0
 	for _, q := range m.Inventory {
 		total += q
 	}
+	return total
+}
 
-	// Если собрал 4+ — идём к владельцу и отдаём.
-	if total >= 4 {
-		if s.pinkDeliver(m) {
-			return
-		}
-		// Идти к владельцу.
-		owner := s.findPlayerState(m.OwnerID)
-		if owner == nil {
-			return
-		}
-		dx := owner.X - m.Pos.X
-		dy := owner.Y - m.Pos.Y
-		dz := owner.Z - m.Pos.Z
-		d := float32(math.Sqrt(float64(dx*dx + dy*dy + dz*dz)))
-		if d < 0.01 {
-			return
-		}
-		m.Pos.X += (dx / d) * pinkSpeed * dt
-		m.Pos.Y += (dy / d) * pinkSpeed * dt
-		m.Pos.Z += (dz / d) * pinkSpeed * dt
-		m.Pos = protocol.ClampToSurface(m.Pos)
+// pinkGatherDeliver — фаза доставки: попытка передать, иначе движение к владельцу.
+func (s *Server) pinkGatherDeliver(m *Mob, dt float32) {
+	if s.pinkDeliver(m) {
 		return
 	}
+	owner := s.findPlayerState(m.OwnerID)
+	if owner == nil {
+		return
+	}
+	m.moveTowards(protocol.Vector3{X: owner.X, Y: owner.Y, Z: owner.Z}, pinkSpeed*dt)
+}
 
-	// Ищем ближайший ресурс.
+// pinkGatherPick — фаза сбора: найти ближайший ресурс, подобрать или подойти.
+func (s *Server) pinkGatherPick(m *Mob, dt float32) {
+	target, bestD2 := s.pinkFindNearestResource(m.Pos)
+	if target == nil {
+		return
+	}
+	if bestD2 < float32(pinkPickD2) {
+		s.pinkPickUpResource(m, target.ID)
+		return
+	}
+	m.moveTowards(protocol.Vector3{X: target.X, Y: target.Y, Z: target.Z}, pinkSpeed*dt)
+}
+
+// pinkFindNearestResource ищет ближайший ресурс в радиусе pinkSearchD2.
+// Возвращает nil, если ничего нет.
+func (s *Server) pinkFindNearestResource(pos protocol.Vector3) (*protocol.Resource, float32) {
 	var target *protocol.Resource
 	bestD2 := float32(pinkSearchD2)
+
 	s.resources.RLock()
+	defer s.resources.RUnlock()
 	for _, res := range s.resources.Map() {
-		dx := res.X - m.Pos.X
-		dy := res.Y - m.Pos.Y
-		dz := res.Z - m.Pos.Z
+		dx := res.X - pos.X
+		dy := res.Y - pos.Y
+		dz := res.Z - pos.Z
 		d2 := dx*dx + dy*dy + dz*dz
 		if d2 < bestD2 {
 			r := res
@@ -182,35 +202,20 @@ func (s *Server) tickPinkGather(m *Mob, dt float32) {
 			bestD2 = d2
 		}
 	}
-	s.resources.RUnlock()
+	return target, bestD2
+}
 
-	if target == nil {
+// pinkPickUpResource удаляет ресурс с карты и кладёт его в инвентарь моба.
+// Проверяет, что ресурс ещё существует (мог быть подобран другим мобом/игроком).
+func (s *Server) pinkPickUpResource(m *Mob, resourceID string) {
+	s.resources.Lock()
+	defer s.resources.Unlock()
+	res, ok := s.resources.Map()[resourceID]
+	if !ok {
 		return
 	}
-
-	// Подобрать если рядом.
-	if bestD2 < float32(pinkPickD2) {
-		s.resources.Lock()
-		if _, ok := s.resources.Map()[target.ID]; ok {
-			delete(s.resources.Map(), target.ID)
-			m.Inventory[target.Type]++
-		}
-		s.resources.Unlock()
-		return
-	}
-
-	// Идти к ресурсу.
-	dx := target.X - m.Pos.X
-	dy := target.Y - m.Pos.Y
-	dz := target.Z - m.Pos.Z
-	d := float32(math.Sqrt(float64(dx*dx + dy*dy + dz*dz)))
-	if d < 0.01 {
-		return
-	}
-	m.Pos.X += (dx / d) * pinkSpeed * dt
-	m.Pos.Y += (dy / d) * pinkSpeed * dt
-	m.Pos.Z += (dz / d) * pinkSpeed * dt
-	m.Pos = protocol.ClampToSurface(m.Pos)
+	delete(s.resources.Map(), resourceID)
+	m.Inventory[res.Type]++
 }
 
 // pinkDeliver — если рядом с владельцем, передаёт ему все ресурсы. Возвращает true если отдал.

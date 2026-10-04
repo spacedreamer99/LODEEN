@@ -206,3 +206,16 @@ func (m *Mob) moveByDir(ux, uy, uz, dist float32) {
 	m.Pos.Z += uz * dist
 	m.Pos = protocol.ClampToSurface(m.Pos)
 }
+
+// moveTowards смещает моба в сторону target на dist.
+// Ничего не делает, если моб уже на месте (< 0.01).
+func (m *Mob) moveTowards(target protocol.Vector3, dist float32) {
+	dx := target.X - m.Pos.X
+	dy := target.Y - m.Pos.Y
+	dz := target.Z - m.Pos.Z
+	d := float32(math.Sqrt(float64(dx*dx + dy*dy + dz*dz)))
+	if d < 0.01 {
+		return
+	}
+	m.moveByDir(dx/d, dy/d, dz/d, dist)
+}
