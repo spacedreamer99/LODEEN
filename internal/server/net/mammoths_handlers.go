@@ -191,6 +191,15 @@ func (s *Server) handleRideMammoth(c *Client, mammothID string) {
 	c.log.Info("mounted", "id", mammothID)
 }
 
+// mammothHitResult — итог удара по мамонту.
+type mammothHitResult struct {
+	killed  bool
+	hpAfter int
+	pos     protocol.Vector3 // позиция для дропа (валидна только если killed)
+}
+
+// handleHitMammoth — оркестратор удара по мамонту:
+// дебаунс → валидация → применение урона → дроп (если убит).
 func (s *Server) handleHitMammoth(c *Client, mammothID string) {
 	now := time.Now()
 
@@ -207,59 +216,74 @@ func (s *Server) handleHitMammoth(c *Client, mammothID string) {
 
 	c.lastHitAt = now
 
-	// Валидация: мамонт существует.
-	s.mammoths.Lock()
-	m, ok := s.mammoths.Map()[mammothID]
+	res, ok := s.applyHitMammoth(c, mammothID)
 	if !ok {
-		s.mammoths.Unlock()
-		c.log.Warn("hit rejected: mammoth not found")
 		return
 	}
 
-	// Валидация: мамонт в разумной близости от игрока.
+	if res.killed {
+		s.spawnMammothDrops(res.pos)
+		c.log.Info("mammoth KILLED", "id", mammothID)
+	} else {
+		c.log.Info("mammoth hit", "id", mammothID, "hp", res.hpAfter)
+	}
+}
+
+// applyHitMammoth под одним lock'ом: находит мамонта, проверяет дистанцию,
+// наносит урон, удаляет убитого. Возвращает ok=false, если удар отклонён.
+func (s *Server) applyHitMammoth(c *Client, mammothID string) (mammothHitResult, bool) {
+	s.mammoths.Lock()
+	defer s.mammoths.Unlock()
+
+	m, ok := s.mammoths.Map()[mammothID]
+	if !ok {
+		c.log.Warn("hit rejected: mammoth not found")
+		return mammothHitResult{}, false
+	}
+
 	ps := c.State()
 	dx := m.Pos.X - ps.X
 	dy := m.Pos.Y - ps.Y
 	dz := m.Pos.Z - ps.Z
-	dist2 := dx*dx + dy*dy + dz*dz
 	const maxD2 float32 = 80.0 * 80.0
-	if dist2 > maxD2 {
-		s.mammoths.Unlock()
-		c.log.Warn("hit rejected: too far", "d2", dist2)
-		return
+	if dx*dx+dy*dy+dz*dz > maxD2 {
+		c.log.Warn("hit rejected: too far")
+		return mammothHitResult{}, false
 	}
 
 	m.HP--
-	var meatPos protocol.Vector3
-	killed := m.HP <= 0
-	if killed {
-		meatPos = m.Pos
+	res := mammothHitResult{
+		killed:  m.HP <= 0,
+		hpAfter: m.HP,
+	}
+	if res.killed {
+		res.pos = m.Pos
 		delete(s.mammoths.Map(), mammothID)
 	}
-	s.mammoths.Unlock()
+	return res, true
+}
 
-	if killed {
-		s.resources.Lock()
-		meatID := newID()
-		s.resources.Map()[meatID] = protocol.Resource{
-			ID:   meatID,
-			Type: "meat",
-			X:    meatPos.X,
-			Y:    meatPos.Y,
-			Z:    meatPos.Z,
-		}
-		// Небольшой сдвиг, чтобы копьё не совпадало с мясом и его можно было подобрать отдельно.
-		spearID := newID()
-		s.resources.Map()[spearID] = protocol.Resource{
-			ID:   spearID,
-			Type: "spear",
-			X:    meatPos.X + 1.5,
-			Y:    meatPos.Y,
-			Z:    meatPos.Z + 1.5,
-		}
-		s.resources.Unlock()
-		c.log.Info("mammoth KILLED", "id", mammothID)
-	} else {
-		c.log.Info("mammoth hit", "id", mammothID, "hp", m.HP)
+// spawnMammothDrops кладёт на землю мясо и копьё рядом с тушей.
+// Копьё сдвинуто — чтобы не совпадало с мясом и подбиралось отдельно.
+func (s *Server) spawnMammothDrops(pos protocol.Vector3) {
+	s.resources.Lock()
+	defer s.resources.Unlock()
+
+	meatID := newID()
+	s.resources.Map()[meatID] = protocol.Resource{
+		ID:   meatID,
+		Type: "meat",
+		X:    pos.X,
+		Y:    pos.Y,
+		Z:    pos.Z,
+	}
+
+	spearID := newID()
+	s.resources.Map()[spearID] = protocol.Resource{
+		ID:   spearID,
+		Type: "spear",
+		X:    pos.X + 1.5,
+		Y:    pos.Y,
+		Z:    pos.Z + 1.5,
 	}
 }
