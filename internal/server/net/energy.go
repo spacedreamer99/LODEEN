@@ -140,51 +140,92 @@ func (s *Server) handleOpenFactory(c *Client, factoryID string) {
 	c.log.Info("factory opened", "id", factoryID)
 }
 
+// handleCraftFactory — оркестратор крафта на фабрике:
+// валидация → списание энергии → списание ресурсов + выдача → inventory update.
 func (s *Server) handleCraftFactory(c *Client, factoryID, recipeID string) {
+	f, r, ok := s.lookupFactoryAndRecipe(c, factoryID, recipeID)
+	if !ok {
+		return
+	}
+	if !s.consumeBatteryEnergy(c, f.Pos, r.energy) {
+		return
+	}
+	inv, ok := s.consumeAndGrant(c, r)
+	if !ok {
+		return
+	}
+	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
+	c.log.Info("factory crafted", "id", factoryID, "recipe", recipeID, "out", r.out)
+}
+
+// lookupFactoryAndRecipe достаёт фабрику и рецепт.
+// Возвращает ok=false, если что-то не найдено или ресурсов не хватает.
+func (s *Server) lookupFactoryAndRecipe(c *Client, factoryID, recipeID string) (*Factory, factoryRecipe, bool) {
 	s.factories.RLock()
 	f, ok := s.factories.Map()[factoryID]
 	s.factories.RUnlock()
 	if !ok {
 		c.log.Warn("factory craft: not found")
-		return
+		return nil, factoryRecipe{}, false
 	}
 
 	r, ok := factoryRecipes[recipeID]
 	if !ok {
 		c.log.Warn("factory craft: unknown recipe", "id", recipeID)
-		return
+		return nil, factoryRecipe{}, false
 	}
 
-	// Проверяем ресурсы.
+	if !clientHasResources(c, r.need) {
+		c.log.Warn("factory craft: not enough resources")
+		return nil, factoryRecipe{}, false
+	}
+	return f, r, true
+}
+
+// clientHasResources проверяет, что у клиента есть все ресурсы для рецепта.
+func clientHasResources(c *Client, need map[string]int) bool {
 	c.mu.Lock()
-	for item, q := range r.need {
+	defer c.mu.Unlock()
+	for item, q := range need {
 		if c.inventory[item] < q {
-			c.mu.Unlock()
-			c.log.Warn("factory craft: not enough resources", "item", item)
-			return
+			return false
 		}
 	}
-	c.mu.Unlock()
+	return true
+}
 
-	// Ищем батарею для питания.
+// consumeBatteryEnergy списывает энергию с ближайшей к фабрике батареи.
+// Возвращает false, если батареи нет или энергии не хватает.
+func (s *Server) consumeBatteryEnergy(c *Client, factoryPos protocol.Vector3, energy int) bool {
 	s.batteries.Lock()
-	b := s.nearestBatteryLocked(f.Pos)
-	if b == nil {
-		s.batteries.Unlock()
-		c.log.Warn("factory craft: no battery in range")
-		return
-	}
-	if b.Energy < r.energy {
-		s.batteries.Unlock()
-		c.log.Warn("factory craft: not enough energy",
-			"have", b.Energy, "need", r.energy)
-		return
-	}
-	b.Energy -= r.energy
-	s.batteries.Unlock()
+	defer s.batteries.Unlock()
 
-	// Списываем ресурсы и выдаём предмет.
+	b := s.nearestBatteryLocked(factoryPos)
+	if b == nil {
+		c.log.Warn("factory craft: no battery in range")
+		return false
+	}
+	if b.Energy < energy {
+		c.log.Warn("factory craft: not enough energy",
+			"have", b.Energy, "need", energy)
+		return false
+	}
+	b.Energy -= energy
+	return true
+}
+
+// consumeAndGrant списывает ресурсы рецепта и кладёт выход в инвентарь.
+// Возвращает актуальный inventory snapshot для отправки клиенту.
+// ok=false, если ресурсов не хватило (race с другим действием).
+func (s *Server) consumeAndGrant(c *Client, r factoryRecipe) (map[string]int, bool) {
 	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for item, q := range r.need {
+		if c.inventory[item] < q {
+			return nil, false
+		}
+	}
 	for item, q := range r.need {
 		c.inventory[item] -= q
 		if c.inventory[item] <= 0 {
@@ -192,14 +233,12 @@ func (s *Server) handleCraftFactory(c *Client, factoryID, recipeID string) {
 		}
 	}
 	c.inventory[r.out] += r.outQty
+
 	inv := make(map[string]int, len(c.inventory))
 	for k, v := range c.inventory {
 		inv[k] = v
 	}
-	c.mu.Unlock()
-
-	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
-	c.log.Info("factory crafted", "id", factoryID, "recipe", recipeID, "out", r.out)
+	return inv, true
 }
 
 // tickEnergy — панели заряжают ближайшие батареи.
