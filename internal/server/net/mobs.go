@@ -85,97 +85,124 @@ func (s *Server) findPlayerState(id string) *protocol.PlayerState {
 	return &st
 }
 
+// mobPlayerInfo — снимок клиента для AI мобов.
+type mobPlayerInfo struct {
+	client *Client
+	state  protocol.PlayerState
+}
+
+// tickMobs — оркестратор тика мобов: снимок игроков + диспетчер по виду моба.
 func (s *Server) tickMobs(dt float32) {
 	s.mobs.Lock()
 	defer s.mobs.Unlock()
 
-	// Снимок игроков
-	type pInfo struct {
-		client *Client
-		state  protocol.PlayerState
-	}
-	s.mu.RLock()
-	players := make([]pInfo, 0, len(s.clients))
-	for _, c := range s.clients {
-		players = append(players, pInfo{client: c, state: c.State()})
-	}
-	s.mu.RUnlock()
-
+	players := s.snapshotMobPlayers()
 	now := time.Now()
+
 	for _, m := range s.mobs.Map() {
-		// Розовый — убегает от серых и красных.
-		if m.Kind == "pink" {
-			s.tickPink(m, dt)
-			continue
-		}
-		// Коллектор и не разозлён — собирает ресурсы и не атакует.
-		if m.Kind == "collector" && !m.Angered {
-			s.tickCollector(m, dt)
-			continue
-		}
-		// Только враги (красные или разозлённые серые) идут сюда.
-		if m.Kind != "hostile" && !m.Angered {
-			continue
-		}
-		var nearest *pInfo
-		minD2 := float32(mobAggroD2)
-		for i := range players {
-			dx := players[i].state.X - m.Pos.X
-			dy := players[i].state.Y - m.Pos.Y
-			dz := players[i].state.Z - m.Pos.Z
-			d2 := dx*dx + dy*dy + dz*dz
-			if d2 < minD2 {
-				minD2 = d2
-				nearest = &players[i]
-			}
-		}
-		if nearest == nil {
-			continue
-		}
+		s.tickMob(m, players, now, dt)
+	}
+}
 
-		// Направление и расстояние до игрока.
-		dx := nearest.state.X - m.Pos.X
-		dy := nearest.state.Y - m.Pos.Y
-		dz := nearest.state.Z - m.Pos.Z
-		d := float32(math.Sqrt(float64(dx*dx + dy*dy + dz*dz)))
-		if d < 0.01 {
-			continue
-		}
+// snapshotMobPlayers копирует текущих клиентов и их состояния.
+// Делается до s.mobs.Lock() — иначе deadlock с per-client lock'ами.
+func (s *Server) snapshotMobPlayers() []mobPlayerInfo {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]mobPlayerInfo, 0, len(s.clients))
+	for _, c := range s.clients {
+		out = append(out, mobPlayerInfo{client: c, state: c.State()})
+	}
+	return out
+}
 
-		// Выбор поведения по дистанции.
-		switch {
-		case minD2 < float32(mobKeepMinD2):
-			// Слишком близко — отойти от игрока.
-			m.Pos.X -= (dx / d) * mobSpeed * dt
-			m.Pos.Y -= (dy / d) * mobSpeed * dt
-			m.Pos.Z -= (dz / d) * mobSpeed * dt
-			m.Pos = protocol.ClampToSurface(m.Pos)
+// tickMob — диспетчер по виду моба.
+//
+//	pink        — убегает от врагов, выполняет контракт
+//	collector   — собирает ресурсы (пока не Angered)
+//	hostile     — преследует и атакует ближайшего игрока
+//	Angered     — collector в ярости тоже атакует
+func (s *Server) tickMob(m *Mob, players []mobPlayerInfo, now time.Time, dt float32) {
+	switch {
+	case m.Kind == "pink":
+		s.tickPink(m, dt)
+	case m.Kind == "collector" && !m.Angered:
+		s.tickCollector(m, dt)
+	case m.Kind == "hostile" || m.Angered:
+		s.tickHostileMob(m, players, now, dt)
+	}
+}
 
-		case minD2 > float32(mobAttackRangeD2):
-			// Далеко — подойти к игроку.
-			m.Pos.X += (dx / d) * mobSpeed * dt
-			m.Pos.Y += (dy / d) * mobSpeed * dt
-			m.Pos.Z += (dz / d) * mobSpeed * dt
-			m.Pos = protocol.ClampToSurface(m.Pos)
+// tickHostileMob — поведение враждебного моба по дистанции до игрока:
+// слишком близко — отойти, далеко — подойти, в зоне стрельбы — бросок копья.
+func (s *Server) tickHostileMob(m *Mob, players []mobPlayerInfo, now time.Time, dt float32) {
+	nearest, minD2 := findNearestPlayer(players, m.Pos)
+	if nearest == nil {
+		return
+	}
+	dx := nearest.state.X - m.Pos.X
+	dy := nearest.state.Y - m.Pos.Y
+	dz := nearest.state.Z - m.Pos.Z
+	d := float32(math.Sqrt(float64(dx*dx + dy*dy + dz*dz)))
+	if d < 0.01 {
+		return
+	}
+	ux, uy, uz := dx/d, dy/d, dz/d
 
-		default:
-			// В зоне стрельбы (6–12 юнитов) — держим позицию и бросаем копьё.
-			if now.Sub(m.LastAttackAt) >= mobAttackCooldown {
-				m.LastAttackAt = now
-				pid := newID()
-				s.projectiles.Lock()
-				s.projectiles.Map()[pid] = &Projectile{
-					ID:         pid,
-					Pos:        m.Pos,
-					Dir:        protocol.Vector3{X: dx / d, Y: dy / d, Z: dz / d},
-					Speed:      12.0,
-					OwnerMobID: m.ID,
-					TargetID:   nearest.client.ID,
-					SpawnAt:    now,
-				}
-				s.projectiles.Unlock()
-				s.log.Info("mob throws spear", "mob", m.ID, "target", nearest.client.ID, "dist", d)
-			}
+	switch {
+	case minD2 < float32(mobKeepMinD2):
+		m.moveByDir(-ux, -uy, -uz, mobSpeed*dt)
+
+	case minD2 > float32(mobAttackRangeD2):
+		m.moveByDir(ux, uy, uz, mobSpeed*dt)
+
+	default:
+		if now.Sub(m.LastAttackAt) >= mobAttackCooldown {
+			m.LastAttackAt = now
+			s.mobThrowSpear(m, nearest, ux, uy, uz, now)
 		}
 	}
+}
+
+// findNearestPlayer ищет ближайшего игрока в радиусе mobAggroD2.
+// Возвращает nil, если никого нет в радиусе.
+func findNearestPlayer(players []mobPlayerInfo, pos protocol.Vector3) (*mobPlayerInfo, float32) {
+	var nearest *mobPlayerInfo
+	minD2 := float32(mobAggroD2)
+	for i := range players {
+		dx := players[i].state.X - pos.X
+		dy := players[i].state.Y - pos.Y
+		dz := players[i].state.Z - pos.Z
+		d2 := dx*dx + dy*dy + dz*dz
+		if d2 < minD2 {
+			minD2 = d2
+			nearest = &players[i]
+		}
+	}
+	return nearest, minD2
+}
+
+// mobThrowSpear создаёт снаряд от моба в сторону цели.
+func (s *Server) mobThrowSpear(m *Mob, target *mobPlayerInfo, ux, uy, uz float32, now time.Time) {
+	pid := newID()
+	s.projectiles.Lock()
+	s.projectiles.Map()[pid] = &Projectile{
+		ID:         pid,
+		Pos:        m.Pos,
+		Dir:        protocol.Vector3{X: ux, Y: uy, Z: uz},
+		Speed:      12.0,
+		OwnerMobID: m.ID,
+		TargetID:   target.client.ID,
+		SpawnAt:    now,
+	}
+	s.projectiles.Unlock()
+	s.log.Info("mob throws spear", "mob", m.ID, "target", target.client.ID)
+}
+
+// moveByDir смещает моба вдоль единичного направления на dist и прижимает к поверхности.
+func (m *Mob) moveByDir(ux, uy, uz, dist float32) {
+	m.Pos.X += ux * dist
+	m.Pos.Y += uy * dist
+	m.Pos.Z += uz * dist
+	m.Pos = protocol.ClampToSurface(m.Pos)
 }
