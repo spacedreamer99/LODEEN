@@ -85,66 +85,74 @@ func (s *Server) sendInventory(c *Client) {
 	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
 }
 
+// handleAcceptContract — оркестратор: принять контракт → залогировать → inventory update.
 func (s *Server) handleAcceptContract(c *Client, mobID, contractID string) {
+	if !s.tryAcceptContract(c, mobID, contractID) {
+		return
+	}
+	c.log.Info("contract accepted", "mob", mobID, "contract", contractID)
+	s.sendInventory(c)
+}
+
+// tryAcceptContract делает всю работу под одним s.mobs.Lock():
+// валидация моба → оплата → установка контракта. ok=false, если что-то не так.
+func (s *Server) tryAcceptContract(c *Client, mobID, contractID string) bool {
 	s.mobs.Lock()
+	defer s.mobs.Unlock()
+
 	m, ok := s.mobs.Map()[mobID]
 	if !ok {
-		s.mobs.Unlock()
 		c.log.Warn("contract: mob not found")
-		return
+		return false
 	}
 	if m.Kind != "pink" {
-		s.mobs.Unlock()
 		c.log.Warn("contract: not a pink mob")
-		return
+		return false
 	}
 	if m.Contract != "" {
-		s.mobs.Unlock()
 		c.log.Warn("contract: mob already busy", "existing", m.Contract)
-		return
+		return false
 	}
 	if contractID != "gather4" && contractID != "guard" {
-		s.mobs.Unlock()
 		c.log.Warn("contract: unknown id", "id", contractID)
-		return
+		return false
 	}
+	if !payContractPrice(c, contractID) {
+		return false
+	}
+	applyContract(m, c.ID, contractID)
+	return true
+}
 
-	// Проверяем цену.
+// payContractPrice списывает с клиента цену контракта.
+//
+//	gather4 → 1 fruit
+//	guard   → 10 spear
+func payContractPrice(c *Client, contractID string) bool {
 	switch contractID {
 	case "gather4":
 		if !c.consumeItem("fruit") {
-			s.mobs.Unlock()
 			c.log.Warn("contract: no fruit")
-			return
+			return false
 		}
 	case "guard":
 		c.mu.Lock()
-		hasSpear := c.inventory["spear"] >= 10
-		if hasSpear {
-			c.inventory["spear"] -= 10
-		}
-		c.mu.Unlock()
-		if !hasSpear {
-			s.mobs.Unlock()
+		defer c.mu.Unlock()
+		if c.inventory["spear"] < 10 {
 			c.log.Warn("contract: not enough spears")
-			return
+			return false
 		}
+		c.inventory["spear"] -= 10
 	}
+	return true
+}
 
+// applyContract устанавливает мобу контракт и владельца.
+// Для gather4 сбрасывает инвентарь моба (начинает сбор заново).
+func applyContract(m *Mob, ownerID, contractID string) {
 	m.Contract = contractID
-	m.OwnerID = c.ID
+	m.OwnerID = ownerID
 	if contractID == "gather4" {
 		m.Inventory = make(map[string]int)
 	}
-	s.mobs.Unlock()
-
-	c.log.Info("contract accepted", "mob", mobID, "contract", contractID)
-
-	c.mu.Lock()
-	inv := make(map[string]int, len(c.inventory))
-	for k, v := range c.inventory {
-		inv[k] = v
-	}
-	c.mu.Unlock()
-	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
 }
