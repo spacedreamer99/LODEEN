@@ -140,26 +140,20 @@ func (s *Server) handleOpenFactory(c *Client, factoryID string) {
 	c.log.Info("factory opened", "id", factoryID)
 }
 
-// handleCraftFactory — оркестратор крафта на фабрике:
-// валидация → списание энергии → списание ресурсов + выдача → inventory update.
+// handleCraftFactory — оркестратор: найти фабрику+рецепт → атомарный крафт → snapshot.
 func (s *Server) handleCraftFactory(c *Client, factoryID, recipeID string) {
 	f, r, ok := s.lookupFactoryAndRecipe(c, factoryID, recipeID)
 	if !ok {
 		return
 	}
-	if !s.consumeBatteryEnergy(c, f.Pos, r.energy) {
+	if !s.tryCraftFactory(c, f, r) {
 		return
 	}
-	inv, ok := s.consumeAndGrant(c, r)
-	if !ok {
-		return
-	}
-	c.sendEnvelope(protocol.TypeInventoryUpdate, protocol.InventoryUpdate{Items: inv})
+	s.sendInventory(c)
 	c.log.Info("factory crafted", "id", factoryID, "recipe", recipeID, "out", r.out)
 }
 
-// lookupFactoryAndRecipe достаёт фабрику и рецепт.
-// Возвращает ok=false, если что-то не найдено или ресурсов не хватает.
+// lookupFactoryAndRecipe достаёт фабрику и рецепт (без проверки ресурсов).
 func (s *Server) lookupFactoryAndRecipe(c *Client, factoryID, recipeID string) (*Factory, factoryRecipe, bool) {
 	s.factories.RLock()
 	f, ok := s.factories.Map()[factoryID]
@@ -174,58 +168,44 @@ func (s *Server) lookupFactoryAndRecipe(c *Client, factoryID, recipeID string) (
 		c.log.Warn("factory craft: unknown recipe", "id", recipeID)
 		return nil, factoryRecipe{}, false
 	}
-
-	if !clientHasResources(c, r.need) {
-		c.log.Warn("factory craft: not enough resources")
-		return nil, factoryRecipe{}, false
-	}
 	return f, r, true
 }
 
-// clientHasResources проверяет, что у клиента есть все ресурсы для рецепта.
-func clientHasResources(c *Client, need map[string]int) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for item, q := range need {
-		if c.inventory[item] < q {
-			return false
-		}
-	}
-	return true
-}
-
-// consumeBatteryEnergy списывает энергию с ближайшей к фабрике батареи.
-// Возвращает false, если батареи нет или энергии не хватает.
-func (s *Server) consumeBatteryEnergy(c *Client, factoryPos protocol.Vector3, energy int) bool {
-	s.batteries.Lock()
-	defer s.batteries.Unlock()
-
-	b := s.nearestBatteryLocked(factoryPos)
-	if b == nil {
-		c.log.Warn("factory craft: no battery in range")
-		return false
-	}
-	if b.Energy < energy {
-		c.log.Warn("factory craft: not enough energy",
-			"have", b.Energy, "need", energy)
-		return false
-	}
-	b.Energy -= energy
-	return true
-}
-
-// consumeAndGrant списывает ресурсы рецепта и кладёт выход в инвентарь.
-// Возвращает актуальный inventory snapshot для отправки клиенту.
-// ok=false, если ресурсов не хватило (race с другим действием).
-func (s *Server) consumeAndGrant(c *Client, r factoryRecipe) (map[string]int, bool) {
+// tryCraftFactory — атомарный крафт: под одним удержанием c.mu
+// проверяет ресурсы, списывает энергию батареи, списывает ресурсы и выдаёт выход.
+//
+// Lock ordering: c.mu → s.batteries. Нигде в коде нет обратного порядка,
+// поэтому deadlock невозможен.
+//
+// Раньше проверка ресурсов и их списание делались в разных критических секциях:
+// tickHunger мог съесть fruit между ними → энергия тратилась, крафт не происходил.
+func (s *Server) tryCraftFactory(c *Client, f *Factory, r factoryRecipe) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	for item, q := range r.need {
 		if c.inventory[item] < q {
-			return nil, false
+			c.log.Warn("factory craft: not enough resources", "missing", item)
+			return false
 		}
 	}
+
+	s.batteries.Lock()
+	b := s.nearestBatteryLocked(f.Pos)
+	if b == nil {
+		s.batteries.Unlock()
+		c.log.Warn("factory craft: no battery in range")
+		return false
+	}
+	if b.Energy < r.energy {
+		s.batteries.Unlock()
+		c.log.Warn("factory craft: not enough energy",
+			"have", b.Energy, "need", r.energy)
+		return false
+	}
+	b.Energy -= r.energy
+	s.batteries.Unlock()
+
 	for item, q := range r.need {
 		c.inventory[item] -= q
 		if c.inventory[item] <= 0 {
@@ -233,12 +213,7 @@ func (s *Server) consumeAndGrant(c *Client, r factoryRecipe) (map[string]int, bo
 		}
 	}
 	c.inventory[r.out] += r.outQty
-
-	inv := make(map[string]int, len(c.inventory))
-	for k, v := range c.inventory {
-		inv[k] = v
-	}
-	return inv, true
+	return true
 }
 
 // tickEnergy — панели заряжают ближайшие батареи.
