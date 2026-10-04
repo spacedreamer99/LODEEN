@@ -28,7 +28,7 @@ Prometheus rules, GitHub Actions CI.
 | `server/net/mammoths.go` | 533 строки, `tickMammoths` 149 строк | 4 файла, оркестратор 18 строк + 3 фазы | `d02b405` |
 | `client/input/flight.go` | 545 строк, `updateSurvival` 117 строк | 4 файла, оркестратор 41 строка + 3 фазы | `b2521e1` |
 
-Итого: ~5000 строк кода переразложено. Ни одной новой функции с логикой —
+Итого: ~5300 строк кода переразложено. Ни одной новой функции с логикой —
 только extract, rename и группировка.
 
 ## Server architecture (ADR 0001)
@@ -49,6 +49,28 @@ batteries, factories, boats, projectiles). Даёт:
 - единый API (`Get/Put/Delete/Len/Read/Update`)
 - lock-graph тривиально проверяем per-domain
 - один тест защищает все 11 доменов
+
+### Server function-level cleanup (продолжение ADR 0001)
+
+После ADR 0001 на сервере остались 7 функций >60 строк. Устранены 6 из них:
+
+| Функция | Было | Стало | Коммит |
+|---|---|---|---|
+| `tickMobs` | 94 | 10-строчный оркестратор + 3 фазы + `Mob.moveByDir` | `00dab0b` |
+| `tickPinkGather` | 78 | 12-строчный оркестратор + 4 фазы + `Mob.moveTowards` | `1ef2ada` |
+| `handleHitMammoth` | 72 | 22-строчный оркестратор + 2 фазы | `655c51e` |
+| `tickBreeding` | 65 | 15-строчный оркестратор + 4 фазы | `ca21792` |
+| `handleCraftFactory` | 63 | 14-строчный оркестратор + 4 фазы | `fc6f6ae` |
+| `handleAcceptContract` | 63 | 7-строчный оркестратор + 3 фазы | `6369cfd` |
+| `tickPilotedRocket` | 62 | оставлен как есть — оркестратор с комментариями | — |
+
+**Что дали эти разбивки:**
+- Устранены 2 латентные race-conditions (`handleHitMob`, `handleHitMammoth` — `m.HP` читался после unlock)
+- Введены переиспользуемые helpers: `Mob.moveByDir`, `Mob.moveTowards`, `spawnDrops`, `sendInventory`
+- `handleCraftFactory` получил защиту от race между проверкой ресурсов и их списанием
+- `dispatch[T]` (103 строки) **оставлен** — это таблица роутинга, не монолит
+
+**Итог:** на сервере не осталось функций >62 строк (кроме таблицы роутинга).
 
 ## Приёмы
 
