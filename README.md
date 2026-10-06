@@ -80,8 +80,6 @@ Launcher сам решает: какой клиент скачать, какие
 3.9 MB/s, 0 ошибок. Генератор: `cmd/loadtest`.
 Запуск: `make loadtest N=32 DURATION=60s`.
 
-![Grafana dashboard под нагрузкой](docs/img/dashboard-loadtest-32.png)
-
 ## Стек
 
 | Слой | Технология |
@@ -134,8 +132,6 @@ Prod-оверрайды:
     kubectl -n lodeen delete deployment lodeen
     sleep 15
     kubectl -n lodeen get deployment   # восстановлен ArgoCD
-
-![ArgoCD LODEEN](docs/img/argocd-lodeen.png)
 
 ## Local dev
 

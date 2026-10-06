@@ -36,3 +36,5 @@ coverage.out
 /main
 /done
 /grep
+res/
+docs/img/
