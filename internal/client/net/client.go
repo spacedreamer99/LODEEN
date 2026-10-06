@@ -114,7 +114,7 @@ func (c *Client) Close() {
 	}
 }
 
-func (c *Client) Connect(addr, nick string) (*protocol.Welcome, error) {
+func (c *Client) Connect(addr, nick, colorHex string) (*protocol.Welcome, error) {
 	c.mu.Lock()
 	if c.status == StatusConnected || c.status == StatusConnecting {
 		c.mu.Unlock()
@@ -132,7 +132,7 @@ func (c *Client) Connect(addr, nick string) (*protocol.Welcome, error) {
 		return nil, err
 	}
 
-	env, err := protocol.NewEnvelope(protocol.TypeHello, protocol.Hello{Nick: nick, Version: "dev"})
+	env, err := protocol.NewEnvelope(protocol.TypeHello, protocol.Hello{Nick: nick, Version: "dev", ColorHex: colorHex})
 	if err != nil {
 		_ = conn.Close()
 		return nil, err
@@ -257,15 +257,12 @@ func (c *Client) InterpolatedSnapshot() []protocol.PlayerState {
 		} else if t > 1 {
 			t = 1
 		}
-		interp := protocol.PlayerState{
-			ID:    a.state.ID,
-			Nick:  a.state.Nick,
-			X:     a.state.X + (b.state.X-a.state.X)*float32(t),
-			Y:     a.state.Y + (b.state.Y-a.state.Y)*float32(t),
-			Z:     a.state.Z + (b.state.Z-a.state.Z)*float32(t),
-			Yaw:   a.state.Yaw,
-			Pitch: a.state.Pitch,
-		}
+		// Копируем ВСЁ из последнего состояния (ColorHex, HP, Hunger,
+		// Nick, RTTms и любые будущие поля), затем интерполируем позицию.
+		interp := a.state
+		interp.X = a.state.X + (b.state.X-a.state.X)*float32(t)
+		interp.Y = a.state.Y + (b.state.Y-a.state.Y)*float32(t)
+		interp.Z = a.state.Z + (b.state.Z-a.state.Z)*float32(t)
 		out = append(out, interp)
 	}
 	return out

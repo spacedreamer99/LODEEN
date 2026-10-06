@@ -16,8 +16,13 @@ func DrawPlayers(players []protocol.PlayerState, ownID string, _ rl.Camera3D) {
 		pos := rl.NewVector3(p.X, p.Y, p.Z)
 		up := rl.Vector3Normalize(pos)
 
-		base := colorForID(p.ID)
-		accent := rl.NewColor(base.R/2+80, base.G/2+80, base.B/2+80, 255)
+		base := playerColor(p)
+		accent := rl.NewColor(
+			uint8(float32(base.R)*0.65),
+			uint8(float32(base.G)*0.65),
+			uint8(float32(base.B)*0.65),
+			255,
+		)
 
 		anim := mobAnims[p.ID]
 		if anim == nil {

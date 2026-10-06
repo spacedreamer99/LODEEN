@@ -101,6 +101,16 @@ func (a *App) draw() {
 			a.drawPause()
 		}
 		a.drawHUD()
+
+		// Ники над игроками — в 2D-контексте, поверх 3D-сцены.
+		render.DrawPlayerNameTags(
+			a.nc.InterpolatedSnapshot(),
+			a.nc.PlayerID(),
+			camRender,
+			epV,
+			sw, sh,
+		)
+
 		if a.ui.showContract {
 			a.drawContract()
 		}
