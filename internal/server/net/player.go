@@ -28,6 +28,7 @@ type Client struct {
 	lastThrowAt time.Time
 	lastHitAt   time.Time
 	heldItem    string
+	colorHex    string
 
 	closeOnce    sync.Once
 	infiniteFuel bool
@@ -38,7 +39,15 @@ func (c *Client) State() protocol.PlayerState {
 	defer c.mu.RUnlock()
 	st := c.state
 	st.HP = c.hp
+	st.ColorHex = c.colorHex
 	return st
+}
+
+// SetColorHex сохраняет цвет после валидации в sanitizeColorHex.
+func (c *Client) SetColorHex(hex string) {
+	c.mu.Lock()
+	c.colorHex = hex
+	c.mu.Unlock()
 }
 
 func (c *Client) damage(n int) {
@@ -59,6 +68,9 @@ func (c *Client) damage(n int) {
 
 func (c *Client) setState(s protocol.PlayerState) {
 	c.mu.Lock()
+	// ColorHex — серверная фича. Клиент не может её перезаписать через State,
+	// иначе цвет теряется после каждого тика (State шлётся 20 Hz).
+	s.ColorHex = c.colorHex
 	c.state = s
 	c.mu.Unlock()
 }

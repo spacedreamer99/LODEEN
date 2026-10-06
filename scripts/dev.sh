@@ -37,10 +37,10 @@ CLIENT1_PID=$!
 
 sleep 1
 
-# pilot2 отключён для тестов, чтобы не путаться в двух окнах
-# echo "==> starting pilot2"
-# LODEEN_CLIENT_NICK=pilot2 "$BIN/lodeen-client" >"$LOG/client2.log" 2>&1 &
-# CLIENT2_PID=$!
+echo "==> starting pilot2"
+sleep 0.5
+LODEEN_CLIENT_NICK=pilot2 "$BIN/lodeen-client" >"$LOG/client2.log" 2>&1 &
+CLIENT2_PID=$!
 
 echo
 echo "server:   $LOG/server.log"

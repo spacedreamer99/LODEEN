@@ -60,8 +60,12 @@ func New(cfg *config.Config, log *slog.Logger) *App {
 		log:    log,
 		mode:   state.ModeMenu,
 		ui: UIState{
-			menuNick: cfg.Client.Nick,
-			menuAddr: cfg.Client.StartAddr,
+			menuNick:   cfg.Client.Nick,
+			menuAddr:   cfg.Client.StartAddr,
+			menuColor:  render.DefaultColor,
+			menuColorH: 0,
+			menuColorS: 1,
+			menuColorV: 0.9,
 		},
 	}
 }

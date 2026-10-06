@@ -2,6 +2,7 @@ package net
 
 import (
 	"net"
+	"strings"
 	"time"
 
 	"github.com/spacedreamer99/lodeen/internal/shared/protocol"
@@ -81,13 +82,30 @@ func (s *Server) performHelloHandshake(client *Client) bool {
 		client.log.Warn("hello decode failed", "err", err)
 		return false
 	}
+	client.log.Info("hello received", "nick", hello.Nick, "color", hello.ColorHex)
 	if hello.Nick == "" {
 		hello.Nick = "anon-" + client.ID[:6]
 	}
 	client.Nick = hello.Nick
 	client.setState(protocol.PlayerState{ID: client.ID, Nick: hello.Nick})
+	client.SetColorHex(sanitizeColorHex(hello.ColorHex))
 	_ = client.conn.SetReadDeadline(time.Time{})
 	return true
+}
+
+// sanitizeColorHex принимает только "#RRGGBB" (hex, case-insensitive).
+// Всё остальное → "". Сервер никогда не доверяет клиентскому цвету слепо.
+func sanitizeColorHex(s string) string {
+	if len(s) != 7 || s[0] != '#' {
+		return ""
+	}
+	for i := 1; i < 7; i++ {
+		c := s[i]
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return ""
+		}
+	}
+	return strings.ToLower(s)
 }
 
 // registerClient отправляет Welcome+Inventory, добавляет клиента в реестр.

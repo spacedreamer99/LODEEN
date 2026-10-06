@@ -25,7 +25,7 @@ func (a *App) startConnect() {
 	a.log.Info("connecting", "addr", a.ui.menuAddr, "nick", a.ui.menuNick)
 
 	start := time.Now()
-	welcome, err := a.nc.Connect(a.ui.menuAddr, a.ui.menuNick)
+	welcome, err := a.nc.Connect(a.ui.menuAddr, a.ui.menuNick, a.ui.menuColor)
 	if err != nil {
 		a.ui.menuErr = "connect failed: " + err.Error()
 		a.log.Warn("connect failed", "err", err)

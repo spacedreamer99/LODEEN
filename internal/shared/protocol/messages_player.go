@@ -3,8 +3,9 @@ package protocol
 // --- Сессия ---
 
 type Hello struct {
-	Nick    string `json:"nick"`
-	Version string `json:"version"`
+	Nick     string `json:"nick"`
+	Version  string `json:"version"`
+	ColorHex string `json:"color_hex,omitempty"` // "#RRGGBB", пусто — сервер выберет
 }
 
 type Welcome struct {
@@ -17,16 +18,17 @@ type Welcome struct {
 // --- Состояние игрока ---
 
 type PlayerState struct {
-	ID     string  `json:"id"`
-	Nick   string  `json:"nick"`
-	X      float32 `json:"x"`
-	Y      float32 `json:"y"`
-	Z      float32 `json:"z"`
-	Yaw    float32 `json:"yaw"`
-	Pitch  float32 `json:"pitch"`
-	Hunger float32 `json:"hunger"`
-	HP     int     `json:"hp"`
-	RTTms  int32   `json:"rtt_ms,omitempty"`
+	ID       string  `json:"id"`
+	Nick     string  `json:"nick"`
+	X        float32 `json:"x"`
+	Y        float32 `json:"y"`
+	Z        float32 `json:"z"`
+	Yaw      float32 `json:"yaw"`
+	Pitch    float32 `json:"pitch"`
+	Hunger   float32 `json:"hunger"`
+	HP       int     `json:"hp"`
+	RTTms    int32   `json:"rtt_ms,omitempty"`
+	ColorHex string  `json:"color_hex,omitempty"`
 }
 
 // Teleport — сервер приказывает клиенту переместиться в точку.

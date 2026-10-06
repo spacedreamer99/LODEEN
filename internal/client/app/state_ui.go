@@ -13,10 +13,14 @@ type UIState struct {
 	cursorCaptured bool
 
 	// Меню (логин + адрес + фокус).
-	menuNick  string
-	menuAddr  string
-	menuErr   string
-	menuFocus int
+	menuNick   string
+	menuAddr   string
+	menuColor  string
+	menuColorH float32
+	menuColorS float32
+	menuColorV float32
+	menuErr    string
+	menuFocus  int
 
 	// Инвентарь + крафт.
 	showInventory bool
