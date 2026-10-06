@@ -1,40 +1,28 @@
-bin/
-tmp/
-*.log
-.env
-
-# local backups
-*.bak
-*.bak[0-9]
-*.bak[0-9][0-9]
-*.dupfix
-
-# editor backups and result files
-*~
-res/editing_result_*
-res/*.png~
-*.bak_before_split
-*.bak_before_energy
-*.bak_*
-
-# Бинарники сборки в корне
+# Build artifacts
+/bin/
+/tmp/
 /client
 /server
 /lodeen-client
 /lodeen-server
-*.bak_*
-*.bak
-*.bak_*
-*.bak
-deploy/ansible/inventory/hosts.ini
-*.bak*
-*.dupfix
-assets_from_phone/
-*.bak
-*.bak_*
 coverage.out
-/main
-/done
-/grep
+
+# Logs
+*.log
+
+# Environment
+.env
+
+# Editor backups
+*~
+*.bak
+*.bak_*
+*.dupfix
+
+# Old res/ images (removed from repo)
 res/
 docs/img/
+assets_from_phone/
+
+# Deploy secrets
+deploy/ansible/inventory/hosts.ini
