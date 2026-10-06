@@ -1,3 +1,5 @@
+> **Статус:** ⏸️ Frozen до 2028 (диплом). См. [HANDOFF.md](docs/HANDOFF.md)
+
 # LODEEN
 
 📄 **[DevOps Portfolio](docs/PORTFOLIO.md)** · **[Testing](docs/TESTING.md)** · **[Refactoring Log](docs/REFACTOR.md)** | **Федеративная платформа для кооперативного мультиплеера на Go.**
