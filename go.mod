@@ -4,6 +4,8 @@ go 1.27.1
 
 require (
 	github.com/gen2brain/raylib-go/raylib v0.60.1
+	github.com/gogpu/gg v0.52.5
+	github.com/gorilla/websocket v1.5.3
 	github.com/prometheus/client_golang v1.24.1
 )
 
@@ -11,7 +13,6 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/ebitengine/purego v0.10.0 // indirect
-	github.com/gogpu/gg v0.52.5 // indirect
 	github.com/gogpu/gpucontext v0.28.0 // indirect
 	github.com/gogpu/gputypes v0.5.2 // indirect
 	github.com/jupiterrider/ffi v0.7.0 // indirect

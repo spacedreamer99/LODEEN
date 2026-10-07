@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	servernet "github.com/spacedreamer99/lodeen/internal/server/net"
+	"github.com/spacedreamer99/lodeen/internal/server/ws"
 	"github.com/spacedreamer99/lodeen/internal/shared/config"
 	"github.com/spacedreamer99/lodeen/internal/shared/logger"
 	"github.com/spacedreamer99/lodeen/internal/shared/metrics"
@@ -81,6 +82,10 @@ func run() error {
 		_, _ = fmt.Fprintf(w, `{"version":%q,"commit":%q,"date":%q,"go":%q}`,
 			info.Version, info.Commit, info.Date, info.GoVersion)
 	})
+
+	wsProxy := &ws.Proxy{Log: log, GameAddr: cfg.Server.TCPAddr}
+	adminMux.Handle("/ws", wsProxy.Handler())
+	adminMux.Handle("/", http.FileServer(http.Dir("web")))
 
 	adminSrv := &http.Server{
 		Addr:              cfg.Server.AdminAddr,
