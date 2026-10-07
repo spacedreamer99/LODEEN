@@ -26,3 +26,4 @@ assets_from_phone/
 
 # Deploy secrets
 deploy/ansible/inventory/hosts.ini
+Raylib-Go-Wasm/
