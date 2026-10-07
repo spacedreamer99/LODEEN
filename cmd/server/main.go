@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	servernet "github.com/spacedreamer99/lodeen/internal/server/net"
+	websrv "github.com/spacedreamer99/lodeen/internal/server/web"
 	"github.com/spacedreamer99/lodeen/internal/server/ws"
 	"github.com/spacedreamer99/lodeen/internal/shared/config"
 	"github.com/spacedreamer99/lodeen/internal/shared/logger"
@@ -85,7 +87,11 @@ func run() error {
 
 	wsProxy := &ws.Proxy{Log: log, GameAddr: cfg.Server.TCPAddr}
 	adminMux.Handle("/ws", wsProxy.Handler())
-	adminMux.Handle("/", http.FileServer(http.Dir("web")))
+	staticFS, err := fs.Sub(websrv.FS, websrv.StaticDir)
+	if err != nil {
+		return fmt.Errorf("embed static: %w", err)
+	}
+	adminMux.Handle("/", http.FileServer(http.FS(staticFS)))
 
 	adminSrv := &http.Server{
 		Addr:              cfg.Server.AdminAddr,
